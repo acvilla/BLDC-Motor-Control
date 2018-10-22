@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?ccsproject version="1.0"?>
+<projectOptions>
+	<deviceFamily value="C2000"/>
+	<origin value="C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/examples/drivers/cpu_timer"/>
+	<isTargetManual value="true"/>
+</projectOptions>
