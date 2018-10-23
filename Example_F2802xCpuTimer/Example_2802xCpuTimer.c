@@ -55,7 +55,6 @@
 // Included Files
 //
 #include "DSP28x_Project.h"     // Device Headerfile and Examples Include File
-
 #include "common/include/clk.h"
 #include "common/include/flash.h"
 #include "common/include/gpio.h"
@@ -63,6 +62,7 @@
 #include "common/include/pll.h"
 #include "common/include/timer.h"
 #include "common/include/wdog.h"
+#include "user.h"
 
 //
 // Function Prototypes
@@ -85,7 +85,6 @@ unsigned long timer2IntCount;
 unsigned long Xint1Count;
 unsigned long Xint2Count;
 unsigned long Xint3Count;
-
 double result;
 unsigned long adcIntCount = 0;
 
@@ -96,6 +95,8 @@ GPIO_Handle myGpio;
 PIE_Handle myPie;
 TIMER_Handle myTimer0, myTimer1, myTimer2;
 PWM_Handle myPwm1, myPwm2, myPwm3;
+CONTROL_Obj Control;
+CONTROL_Obj *ControlPtr = &Control;
 
 //
 // Main
@@ -124,6 +125,11 @@ void main(void)
     myPwm2 = PWM_init((void *)PWM_ePWM2_BASE_ADDR, sizeof(PWM_Obj));
     myPwm3 = PWM_init((void *)PWM_ePWM3_BASE_ADDR, sizeof(PWM_Obj));
 
+    /*
+     * Initialize the Main Control Object.
+     */
+    initControl(ControlPtr);
+
     timer0IntCount = 0;
     timer1IntCount = 0;
     timer2IntCount = 0;
@@ -151,9 +157,9 @@ void main(void)
     CLK_setOscSrc(myClk, CLK_OscSrc_Internal);
 
     //
-    // Setup the PLL for x10 /2 which will yield 50Mhz = 10Mhz * 10 / 2
+    // Setup the PLL for x12 /2 which will yield 60Mhz = 10Mhz * 12 / 2
     //
-    PLL_setup(myPll, PLL_Multiplier_10, PLL_DivideSelect_ClkIn_by_2);
+    PLL_setup(myPll, PLL_Multiplier_12, PLL_DivideSelect_ClkIn_by_2);
 
     //
     // Disable the PIE and all interrupts
@@ -306,11 +312,11 @@ void main(void)
     // Configure CPU-Timer 0, 1, and 2 to interrupt every second:
     // 60MHz CPU Freq, 1 second Period (in uSeconds)
     //
-    //ConfigCpuTimer(&CpuTimer0, 50, 1000000);
+    //ConfigCpuTimer(&CpuTimer0, 60, 1000000);
     TIMER_setPeriod(myTimer0, 60 * 1000000);
-    //ConfigCpuTimer(&CpuTimer1, 50, 1000000);
+    //ConfigCpuTimer(&CpuTimer1, 60, 1000000);
     TIMER_setPeriod(myTimer1, 60 * 1000000);
-    //ConfigCpuTimer(&CpuTimer2, 50, 1000000);
+    //ConfigCpuTimer(&CpuTimer2, 60, 1000000);
     TIMER_setPeriod(myTimer2, 60 * 1000000);
 #endif
 #if (CPU_FRQ_40MHZ)
@@ -326,13 +332,12 @@ void main(void)
     TIMER_setPeriod(myTimer2, 40 * 1000000);
 #endif
 
-    /*
-    TIMER_setPreScaler(myTimer0, 0);
+
+    TIMER_setPreScaler(myTimer0, 0); // No prescaler
     TIMER_reload(myTimer0);
     TIMER_setEmulationMode(myTimer0, 
                            TIMER_EmulationMode_StopAfterNextDecrement);
-    TIMER_enableInt(myTimer0);
-     */
+
 
     TIMER_setPreScaler(myTimer1, 0);
     TIMER_reload(myTimer1);
@@ -372,7 +377,7 @@ void main(void)
     // Use write-only instruction to set TSS bit = 0
     //
     //CpuTimer0Regs.TCR.all = 0x4001;
-    TIMER_start(myTimer0);
+    //TIMER_start(myTimer0);
     
     //
     // Use write-only instruction to set TSS bit = 0
@@ -423,14 +428,23 @@ void main(void)
     CLK_enableTbClockSync(myClk);
     for(;;)
       {
+        if (ControlPtr->speedCalc.speedUpdateReady == TRUE){
+            double periodSecs, freqHz;
+            unsigned long periodCycles;
+            periodCycles = (ControlPtr->speedCalc.timerPeriod - ControlPtr->speedCalc.timerVal); // Electrical rotation period in seconds
+            periodSecs = (double) periodCycles/(ControlPtr->speedCalc.timerPeriod);
+            freqHz = 1/periodSecs;
+            ControlPtr->speedCalc.rpm = freqHz * 60.0/ControlPtr->motor.npp; // Update the speed value
+            ControlPtr->speedCalc.speedUpdateReady = FALSE;
+        }
           //
-          // Trigger both XINT1
+          // Trigger XINT1
           //
-         // GPIO_setHigh(myGpio, GPIO_Number_34);
-         // GPIO_setLow(myGpio, GPIO_Number_28);
-        //  DELAY_US(100000);                      // Wait for Qual period
-         // GPIO_setHigh(myGpio, GPIO_Number_28);
-         // DELAY_US(100000);                      // Wait for Qual period
+         GPIO_setLow(myGpio, GPIO_Number_28);
+         DELAY_US(50000);                      // Wait for Qual period
+         GPIO_setHigh(myGpio, GPIO_Number_28);
+         DELAY_US(50000);                      // Wait for Qual period
+
       }
 
 }
@@ -494,7 +508,6 @@ void initPWM(void)
     EPwm3Regs.AQCTLB.bit.CBD = AQ_SET;
 
 
-
     EPwm1Regs.CMPA.half.CMPA = 4000; // adjust duty for output EPWM1A
     EPwm1Regs.CMPB = 4000; // adjust duty for output EPWM3B
 
@@ -529,6 +542,7 @@ __interrupt void
 cpu_timer1_isr(void)
 {
     timer1IntCount++;
+
     // ADC SOC should occurs when this interrupt fires
 }
 
@@ -538,6 +552,7 @@ cpu_timer1_isr(void)
 __interrupt void
 cpu_timer2_isr(void)
 {
+
     timer2IntCount++;
 }
 //
@@ -553,6 +568,7 @@ adc_isr(void)
     result = result*sf; // final result
 
 
+
     ADC_clearIntFlag(myAdc, ADC_IntNumber_1);
     PIE_clearInt(myPie, PIE_GroupNumber_10);
     return;
@@ -564,7 +580,20 @@ __interrupt void
 xint1_isr(void)
 {
     Xint1Count++;
+    uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_12);
 
+    if (gpioVal == 1){      // Used to get time between rising edge to calculate speed.
+        if (myTimer0->TCR & TIMER_TCR_TSS_BITS){ // If timer is stopped, start timer and begin count
+            //GPIO_setLow(myGpio, GPIO_Number_28);
+            TIMER_reload(myTimer0);
+            TIMER_start(myTimer0);
+        }else {
+            // GPIO_setHigh(myGpio, GPIO_Number_28);
+            TIMER_stop(myTimer0);
+            ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
+            ControlPtr->speedCalc.speedUpdateReady = TRUE;
+        }
+    }
     //
     // Acknowledge this interrupt to get more from group 1
     //
