@@ -1,7 +1,7 @@
 ******************************************************************************
              TMS320C2000 Linker PC v18.1.2                     
 ******************************************************************************
->> Linked Tue Oct 23 17:46:00 2018
+>> Linked Tue Oct 23 18:52:16 2018
 
 OUTPUT FILE NAME:   <Example_F2802xCpuTimer.out>
 ENTRY POINT SYMBOL: "code_start"  address: 00000000
