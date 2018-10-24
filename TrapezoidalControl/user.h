@@ -19,10 +19,30 @@
 #define DUTY_CYCLE_MIN 50;
 #define TIMER_PERIOD 60000000; // 1 Second with 60MHz Clock
 
+#define ADC_REF_VOLTAGE 3.30;
+
+// Hall State Definitions.
+#define HALL_A_MASK (0b100)
+#define HALL_B_MASK (0b010)
+#define HALL_C_MASK (0b001)
+
 typedef enum _boolean_{
     FALSE = 0,
     TRUE = 1
 }boolean;
+
+/*
+ * hall states based on which hall signals are currently high (the rest are low).
+ * For example state C would mean C is high and A and B are low.
+ */
+typedef enum _hall_state_{
+    C = HALL_C_MASK,
+    AC = HALL_A_MASK | HALL_C_MASK,
+    A = HALL_A_MASK,
+    AB = HALL_A_MASK | HALL_B_MASK,
+    B = HALL_B_MASK,
+    BC = HALL_B_MASK | HALL_C_MASK
+}hall_state;
 
 typedef struct _MOTOR_Params_
 {
@@ -55,10 +75,13 @@ typedef struct _CONTROL_Obj_
     int dutyCycleMax;
     double currentLegA_A;
     double currentLegB_A;
+    volatile unsigned int hall_states;
 } CONTROL_Obj;
 
 
-
 void initControl(CONTROL_Obj *ControlPtr);
+void updateHall_A(int val, CONTROL_Obj *ControlPtr);
+void updateHall_B(int val, CONTROL_Obj *ControlPtr);
+void updateHall_C(int val, CONTROL_Obj *ControlPtr);
 
 #endif /* USER_H_ */

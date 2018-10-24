@@ -71,21 +71,17 @@ __interrupt void cpu_timer0_isr(void);
 __interrupt void cpu_timer1_isr(void);
 __interrupt void cpu_timer2_isr(void);
 __interrupt void adc_isr(void);
-__interrupt void xint1_isr(void);
-__interrupt void xint2_isr(void);
-__interrupt void xint3_isr(void);
+__interrupt void hall_a_isr(void);
+__interrupt void hall_b_isr(void);
+__interrupt void hall_c_isr(void);
 void initPWM(void);
 
 //
 // Globals
 //
-unsigned long timer0IntCount;
-unsigned long timer1IntCount;
-unsigned long timer2IntCount;
 unsigned long Xint1Count;
 unsigned long Xint2Count;
 unsigned long Xint3Count;
-double result;
 unsigned long adcIntCount = 0;
 
 CLK_Handle myClk;
@@ -130,9 +126,6 @@ void main(void)
      */
     initControl(ControlPtr);
 
-    timer0IntCount = 0;
-    timer1IntCount = 0;
-    timer2IntCount = 0;
     Xint1Count = 0;
     Xint2Count = 0;
     Xint3Count = 0;
@@ -223,11 +216,11 @@ void main(void)
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_10, PIE_SubGroupNumber_1,
                                   (intVec_t)&adc_isr);
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_1, PIE_SubGroupNumber_4,
-                                  (intVec_t)&xint1_isr);
+                                  (intVec_t)&hall_a_isr);
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_1, PIE_SubGroupNumber_5,
-                                  (intVec_t)&xint2_isr);
+                                  (intVec_t)&hall_b_isr);
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_12, PIE_SubGroupNumber_1,
-                                      (intVec_t)&xint3_isr);
+                                      (intVec_t)&hall_c_isr);
 
     PIE_enableInt(myPie, PIE_GroupNumber_1, PIE_InterruptSource_XINT_1);
     PIE_enableInt(myPie, PIE_GroupNumber_1, PIE_InterruptSource_XINT_2);
@@ -266,7 +259,7 @@ void main(void)
        GPIO_setQualification(myGpio, GPIO_Number_7, GPIO_Qual_Sync);
 
        //
-       // GPIO12 is XINT1
+       // GPIO12 is XINT1 (Hall A), GPIO6 is XINT2 (Hall B), GPIO7 is XINT3 (Hall C)
        //
        GPIO_setExtInt(myGpio, GPIO_Number_12, CPU_ExtIntNumber_1);
        GPIO_setExtInt(myGpio, GPIO_Number_6, CPU_ExtIntNumber_2);
@@ -438,12 +431,35 @@ void main(void)
             ControlPtr->speedCalc.speedUpdateReady = FALSE;
         }
           //
-          // Trigger XINT1
+          // Trigger XINT1 for testing purposes
           //
-         GPIO_setLow(myGpio, GPIO_Number_28);
-         DELAY_US(50000);                      // Wait for Qual period
-         GPIO_setHigh(myGpio, GPIO_Number_28);
-         DELAY_US(50000);                      // Wait for Qual period
+
+        switch (ControlPtr->hall_states){
+        case C:
+            EPwm2Regs.AQCSFRC.bit.CSFA = 0x0; // PWM
+            break;
+        case AC:
+
+            break;
+        case A:
+
+            break;
+        case AB:
+
+            break;
+        case B:
+
+            break;
+        case BC:
+
+            break;
+        default:
+            break;
+        }
+         //GPIO_setLow(myGpio, GPIO_Number_28);
+         //DELAY_US(50000);                      // Wait for Qual period
+         //GPIO_setHigh(myGpio, GPIO_Number_28);
+         //DELAY_US(50000);                      // Wait for Qual period
 
       }
 
@@ -470,6 +486,7 @@ void initPWM(void)
     EPwm1Regs.AQCTLB.bit.CBU = AQ_CLEAR; // set actions for EPWM1A
     EPwm1Regs.AQCTLB.bit.CBD = AQ_SET;
 
+   //EPwm1Regs.AQCSFRC.bit.CSFA = 0x0; // PWM still on
    //EPwm1Regs.AQCSFRC.bit.CSFA = 0x1; // Use these commands to force PWM outputs low or high
    //EPwm1Regs.AQCSFRC.bit.CSFB = 0x2;
 
@@ -520,13 +537,13 @@ void initPWM(void)
 
 }
 
+
 //
 // cpu_timer0_isr - 
 //
 __interrupt void
 cpu_timer0_isr(void)
 {
-    timer0IntCount++;
 
     //
     // Acknowledge this interrupt to receive more interrupts from group 1
@@ -541,7 +558,9 @@ cpu_timer0_isr(void)
 __interrupt void
 cpu_timer1_isr(void)
 {
-    timer1IntCount++;
+    /*
+     * Main ISR: Sample Throttle to calculate speed ref. Update duty cycle.
+     */
 
     // ADC SOC should occurs when this interrupt fires
 }
@@ -553,7 +572,6 @@ __interrupt void
 cpu_timer2_isr(void)
 {
 
-    timer2IntCount++;
 }
 //
 // adc_isr -
@@ -562,25 +580,23 @@ __interrupt void
 adc_isr(void)
 {
     adcIntCount++;
-    result = ADC_readResult(myAdc, ADC_ResultNumber_0);
+    double result = ADC_readResult(myAdc, ADC_ResultNumber_0);
     result = result/4095;
-    double sf = 3.3; // multiply bits by scale factor
+    double sf = ADC_REF_VOLTAGE; // multiply bits by scale factor
     result = result*sf; // final result
-
-
-
     ADC_clearIntFlag(myAdc, ADC_IntNumber_1);
     PIE_clearInt(myPie, PIE_GroupNumber_10);
     return;
 }
 //
-// xint1_isr -
+// hall_a_isr-
 //
 __interrupt void
-xint1_isr(void)
+hall_a_isr(void)
 {
     Xint1Count++;
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_12);
+    updateHall_A(gpioVal, ControlPtr);
 
     if (gpioVal == 1){      // Used to get time between rising edge to calculate speed.
         if (myTimer0->TCR & TIMER_TCR_TSS_BITS){ // If timer is stopped, start timer and begin count
@@ -600,14 +616,14 @@ xint1_isr(void)
     PIE_clearInt(myPie, PIE_GroupNumber_1);
 }
 //
-// xint2_isr -
+// hall_b_isr-
 //
 __interrupt void
-xint2_isr(void)
+hall_b_isr(void)
 {
-    GPIO_setLow(myGpio, GPIO_Number_34);
-
     Xint2Count++;
+    uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_6);
+    updateHall_B(gpioVal, ControlPtr);
 
     //
     // Acknowledge this interrupt to get more from group 1
@@ -615,13 +631,14 @@ xint2_isr(void)
     PIE_clearInt(myPie, PIE_GroupNumber_1);
 }
 //
-// xint2_isr -
+// hall_c_isr -
 //
 __interrupt void
-xint3_isr(void)
+hall_c_isr(void)
 {
     Xint3Count++;
-
+    uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_7);
+    updateHall_C(gpioVal, ControlPtr);
     //
     // Acknowledge this interrupt to get more from group 12
     //

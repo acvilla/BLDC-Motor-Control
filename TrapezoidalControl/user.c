@@ -22,4 +22,30 @@ void initControl (CONTROL_Obj *ControlPtr) {
     ControlPtr->speedCalc.rpmMax = RPM_MAX;
     ControlPtr->currentLegA_A = 0;
     ControlPtr->currentLegB_A = 0;
+    ControlPtr->hall_states = C;
 }
+
+void updateHall_A(int val, CONTROL_Obj *ControlPtr){
+    if (val){
+        ControlPtr->hall_states |= (HALL_A_MASK); // Hall A is high
+    } else {
+        ControlPtr->hall_states &= ~(HALL_A_MASK); // Hall A is low
+    }
+}
+
+void updateHall_B(int val, CONTROL_Obj *ControlPtr){
+    if (val){
+        ControlPtr->hall_states |= (HALL_B_MASK);
+    } else {
+        ControlPtr->hall_states &= ~(HALL_B_MASK);
+    }
+}
+
+void updateHall_C(int val, CONTROL_Obj *ControlPtr){
+    if (val){
+        ControlPtr->hall_states |= (HALL_C_MASK);
+    } else {
+        ControlPtr->hall_states &= ~(HALL_C_MASK);
+    }
+}
+
