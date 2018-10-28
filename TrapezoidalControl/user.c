@@ -7,12 +7,9 @@
 
 #include "user.h"
 
-
 void initControl (CONTROL_Obj *ControlPtr) {
     ControlPtr->piController.k_i = K_I;
     ControlPtr->piController.k_p = K_P;
-    ControlPtr->dutyCycleMin = DUTY_CYCLE_MIN;
-    ControlPtr->dutyCycleMax = DUTY_CYCLE_MAX;
     ControlPtr->dutyCycle = DUTY_CYCLE_DEFAULT;
     ControlPtr->motor.npp = NUM_POLE_PAIRS;
     ControlPtr->motor.stallCurrent_A = STALL_CURRENT_A;
@@ -48,4 +45,6 @@ void updateHall_C(int val, CONTROL_Obj *ControlPtr){
         ControlPtr->hall_states &= ~(HALL_C_MASK);
     }
 }
+
+
 

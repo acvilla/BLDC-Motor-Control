@@ -74,22 +74,23 @@ __interrupt void adc_isr(void);
 __interrupt void hall_a_isr(void);
 __interrupt void hall_b_isr(void);
 __interrupt void hall_c_isr(void);
+void updatePWMState(volatile struct EPWM_REGS *pwmReg, pwm_state CSFA, pwm_state CSFB);
 void initPWM(void);
 
 //
 // Globals
 //
-unsigned long Xint1Count;
-unsigned long Xint2Count;
-unsigned long Xint3Count;
-unsigned long adcIntCount = 0;
+//unsigned long Xint1Count;
+//unsigned long Xint2Count;
+//unsigned long Xint3Count;
+//unsigned long adcIntCount = 0;
 
 CLK_Handle myClk;
 ADC_Handle myAdc;
 FLASH_Handle myFlash;
 GPIO_Handle myGpio;
 PIE_Handle myPie;
-TIMER_Handle myTimer0, myTimer1, myTimer2;
+TIMER_Handle myTimer0, myTimer1;
 PWM_Handle myPwm1, myPwm2, myPwm3;
 CONTROL_Obj Control;
 CONTROL_Obj *ControlPtr = &Control;
@@ -115,7 +116,6 @@ void main(void)
     myPll = PLL_init((void *)PLL_BASE_ADDR, sizeof(PLL_Obj));
     myTimer0 = TIMER_init((void *)TIMER0_BASE_ADDR, sizeof(TIMER_Obj));
     myTimer1 = TIMER_init((void *)TIMER1_BASE_ADDR, sizeof(TIMER_Obj));
-    myTimer2 = TIMER_init((void *)TIMER2_BASE_ADDR, sizeof(TIMER_Obj));
     myWDog = WDOG_init((void *)WDOG_BASE_ADDR, sizeof(WDOG_Obj));
     myPwm1 = PWM_init((void *)PWM_ePWM1_BASE_ADDR, sizeof(PWM_Obj));
     myPwm2 = PWM_init((void *)PWM_ePWM2_BASE_ADDR, sizeof(PWM_Obj));
@@ -126,9 +126,7 @@ void main(void)
      */
     initControl(ControlPtr);
 
-    Xint1Count = 0;
-    Xint2Count = 0;
-    Xint3Count = 0;
+
 
     //
     // Step 1. Initialize System Control:
@@ -211,8 +209,6 @@ void main(void)
                               (intVec_t)&cpu_timer0_isr);
     PIE_registerSystemIntHandler(myPie, PIE_SystemInterrupts_TINT1, 
                                  (intVec_t)&cpu_timer1_isr);
-    PIE_registerSystemIntHandler(myPie, PIE_SystemInterrupts_TINT2, 
-                                 (intVec_t)&cpu_timer2_isr);
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_10, PIE_SubGroupNumber_1,
                                   (intVec_t)&adc_isr);
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_1, PIE_SubGroupNumber_4,
@@ -229,6 +225,22 @@ void main(void)
 
     EDIS;    // This is needed to disable write to EALLOW protected registers
 
+#ifdef _FLASH
+    //
+    // Copy time critical code and Flash setup code to RAM
+    // This includes the following ISR functions: EPwm1_timer_isr(),
+    // EPwm2_timer_isr() and FLASH_setup();
+    // The  RamfuncsLoadStart, RamfuncsLoadSize, and RamfuncsRunStart
+    // symbols are created by the linker. Refer to the F228027.cmd file.
+    //
+    memcpy(&RamfuncsRunStart, &RamfuncsLoadStart, (size_t)&RamfuncsLoadSize);
+
+    //
+    // Call Flash Initialization to setup flash waitstates
+    // This function must reside in RAM
+    //
+    FLASH_setup(myFlash);
+#endif
     //
     // Step 4. Initialize the Device Peripheral. This function can be
     // found in f2802x_CpuTimers.c
@@ -236,7 +248,6 @@ void main(void)
     //InitCpuTimers();   // For this example, only initialize the Cpu Timers
     TIMER_stop(myTimer0);
     TIMER_stop(myTimer1);
-    TIMER_stop(myTimer2);
 
         // GPIO28 Output for TESTING XINT1 and XINT2
         GPIO_setHigh(myGpio, GPIO_Number_28);
@@ -246,18 +257,20 @@ void main(void)
        // Set Up GPIO12 (Hall Sensor A) as input.
        GPIO_setMode(myGpio, GPIO_Number_12, GPIO_12_Mode_GeneralPurpose);
        GPIO_setDirection(myGpio, GPIO_Number_12, GPIO_Direction_Input);
-       GPIO_setQualification(myGpio, GPIO_Number_12, GPIO_Qual_Sync);
+       GPIO_setQualification(myGpio, GPIO_Number_12, GPIO_Qual_Sample_6);
+       GPIO_setQualificationPeriod(myGpio, GPIO_Number_12, 60); // 60MHz/(2*30) = 1uS
 
-       // Set Up GPIO6 (Hall Sensor B) as input.
+       // Set Up GPIO6 (Hall Sensor B) as input.s
        GPIO_setMode(myGpio, GPIO_Number_6, GPIO_6_Mode_GeneralPurpose);
        GPIO_setDirection(myGpio, GPIO_Number_6, GPIO_Direction_Input);
-       GPIO_setQualification(myGpio, GPIO_Number_6, GPIO_Qual_Sync);
+       GPIO_setQualification(myGpio, GPIO_Number_6, GPIO_Qual_Sample_6);
+       GPIO_setQualificationPeriod(myGpio, GPIO_Number_6, 60); // 60MHz/(2*30) = 1uS
 
        // Set Up GPIO7 (Hall Sensor C) as input.
        GPIO_setMode(myGpio, GPIO_Number_7, GPIO_7_Mode_GeneralPurpose);
        GPIO_setDirection(myGpio, GPIO_Number_7, GPIO_Direction_Input);
-       GPIO_setQualification(myGpio, GPIO_Number_7, GPIO_Qual_Sync);
-
+       GPIO_setQualification(myGpio, GPIO_Number_7, GPIO_Qual_Sample_6);
+       GPIO_setQualificationPeriod(myGpio, GPIO_Number_7, 60); // 60MHz/(2*30) = 1uS
        //
        // GPIO12 is XINT1 (Hall A), GPIO6 is XINT2 (Hall B), GPIO7 is XINT3 (Hall C)
        //
@@ -310,7 +323,7 @@ void main(void)
     //ConfigCpuTimer(&CpuTimer1, 60, 1000000);
     TIMER_setPeriod(myTimer1, 60 * 1000000);
     //ConfigCpuTimer(&CpuTimer2, 60, 1000000);
-    TIMER_setPeriod(myTimer2, 60 * 1000000);
+
 #endif
 #if (CPU_FRQ_40MHZ)
     //
@@ -382,7 +395,7 @@ void main(void)
     // Use write-only instruction to set TSS bit = 0
     //
     //CpuTimer2Regs.TCR.all = 0x4001;
-    TIMER_start(myTimer2);
+    //TIMER_start(myTimer2);
 
     //
     // Step 5. User specific code, enable interrupts:
@@ -434,24 +447,43 @@ void main(void)
           // Trigger XINT1 for testing purposes
           //
 
+
         switch (ControlPtr->hall_states){
         case C:
-            EPwm2Regs.AQCSFRC.bit.CSFA = 0x0; // PWM
+            // Phases: Aoff, B+, C-
+            updatePWMState(&EPwm1Regs, LOW, LOW); // Phase A
+            updatePWMState(&EPwm2Regs, PWM, PWM); // Phase B
+            updatePWMState(&EPwm3Regs, LOW, HIGH); // Phase C
             break;
         case AC:
-
+            // Phases: A-, B+, Coff
+            updatePWMState(&EPwm1Regs, LOW, HIGH); // Phase A
+            updatePWMState(&EPwm2Regs, PWM, PWM); // Phase B
+            updatePWMState(&EPwm3Regs, LOW, LOW); // Phase C
             break;
         case A:
-
+            // Phases: A-, Boff, C+
+            updatePWMState(&EPwm1Regs, LOW, HIGH); // Phase A
+            updatePWMState(&EPwm2Regs, LOW, LOW); // Phase B
+            updatePWMState(&EPwm3Regs, PWM, PWM); // Phase C
             break;
         case AB:
-
+            // Phases: Aoff, B-, C+
+            updatePWMState(&EPwm1Regs, LOW, LOW); // Phase A
+            updatePWMState(&EPwm2Regs, LOW, HIGH); // Phase B
+            updatePWMState(&EPwm3Regs, PWM, PWM); // Phase C
             break;
         case B:
-
+            // Phases: A+, B-, Coff
+            updatePWMState(&EPwm1Regs, PWM, PWM); // Phase A
+            updatePWMState(&EPwm2Regs, LOW, HIGH); // Phase B
+            updatePWMState(&EPwm3Regs, LOW, LOW); // Phase C
             break;
         case BC:
-
+            // Phases: A+, Boff, C-
+            updatePWMState(&EPwm1Regs, PWM, PWM); // Phase A
+            updatePWMState(&EPwm2Regs, LOW, LOW); // Phase B
+            updatePWMState(&EPwm3Regs, LOW, HIGH); // Phase C
             break;
         default:
             break;
@@ -465,12 +497,14 @@ void main(void)
 
 }
 
+
+
 void initPWM(void)
 {
     CLK_enablePwmClock(myClk, PWM_Number_1);
     CLK_enablePwmClock(myClk, PWM_Number_2);
     CLK_enablePwmClock(myClk, PWM_Number_3);
-    EPwm1Regs.TBPRD = 8000; // Period = 16000 TBCLK counts
+    EPwm1Regs.TBPRD = TBPRD_VALUE; // Period = 2*TBPRD TBCLK counts
     EPwm1Regs.TBPHS.half.TBPHS = 0; // Set Phase register to zero
     EPwm1Regs.TBCTL.bit.CTRMODE = TB_COUNT_UPDOWN; // Symmetrical mode
     EPwm1Regs.DBCTL.bit.OUT_MODE = DB_DISABLE; // Disable Dead-band module
@@ -491,7 +525,7 @@ void initPWM(void)
    //EPwm1Regs.AQCSFRC.bit.CSFB = 0x2;
 
     // EPWM Module 2 config
-    EPwm2Regs.TBPRD = 8000; // Period = 1600 TBCLK counts
+    EPwm2Regs.TBPRD = TBPRD_VALUE;
     EPwm2Regs.TBPHS.half.TBPHS = 0; // Set Phase register to zero
     EPwm2Regs.TBCTL.bit.CTRMODE = TB_COUNT_UPDOWN; // Symmetrical mode
     EPwm2Regs.DBCTL.bit.OUT_MODE = DB_DISABLE; // Disable Dead-band module
@@ -508,7 +542,7 @@ void initPWM(void)
     EPwm2Regs.AQCTLB.bit.CBD = AQ_SET;
 
     // EPWM Module 3 config
-    EPwm3Regs.TBPRD = 8000; // Period = 1600 TBCLK counts
+    EPwm3Regs.TBPRD = TBPRD_VALUE;
     EPwm3Regs.TBPHS.half.TBPHS = 0; // Set Phase register to zero
     EPwm3Regs.TBCTL.bit.CTRMODE = TB_COUNT_UPDOWN; // Symmetrical mode
     EPwm3Regs.DBCTL.bit.OUT_MODE = DB_DISABLE; // Disable Dead-band module
@@ -525,14 +559,14 @@ void initPWM(void)
     EPwm3Regs.AQCTLB.bit.CBD = AQ_SET;
 
 
-    EPwm1Regs.CMPA.half.CMPA = 4000; // adjust duty for output EPWM1A
-    EPwm1Regs.CMPB = 4000; // adjust duty for output EPWM3B
+    EPwm1Regs.CMPA.half.CMPA = 900; // adjust duty for output EPWM1A
+    EPwm1Regs.CMPB = 600; // adjust duty for output EPWM3B
 
-    EPwm2Regs.CMPA.half.CMPA = 4000; // adjust duty for output EPWM2A
-    EPwm2Regs.CMPB = 4000; // adjust duty for output EPWM3B
+    EPwm2Regs.CMPA.half.CMPA = 750; // adjust duty for output EPWM2A
+    EPwm2Regs.CMPB = 750; // adjust duty for output EPWM3B
 
-    EPwm3Regs.CMPA.half.CMPA = 4000; // adjust duty for output EPWM3A
-    EPwm3Regs.CMPB = 4000; // adjust duty for output EPWM3B
+    EPwm3Regs.CMPA.half.CMPA = 900; // adjust duty for output EPWM3A
+    EPwm3Regs.CMPB = 600; // adjust duty for output EPWM3B
 
 
 }
@@ -566,20 +600,11 @@ cpu_timer1_isr(void)
 }
 
 //
-// cpu_timer2_isr - 
-//
-__interrupt void
-cpu_timer2_isr(void)
-{
-
-}
-//
 // adc_isr -
 //
 __interrupt void
 adc_isr(void)
 {
-    adcIntCount++;
     double result = ADC_readResult(myAdc, ADC_ResultNumber_0);
     result = result/4095;
     double sf = ADC_REF_VOLTAGE; // multiply bits by scale factor
@@ -594,22 +619,9 @@ adc_isr(void)
 __interrupt void
 hall_a_isr(void)
 {
-    Xint1Count++;
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_12);
     updateHall_A(gpioVal, ControlPtr);
 
-    if (gpioVal == 1){      // Used to get time between rising edge to calculate speed.
-        if (myTimer0->TCR & TIMER_TCR_TSS_BITS){ // If timer is stopped, start timer and begin count
-            //GPIO_setLow(myGpio, GPIO_Number_28);
-            TIMER_reload(myTimer0);
-            TIMER_start(myTimer0);
-        }else {
-            // GPIO_setHigh(myGpio, GPIO_Number_28);
-            TIMER_stop(myTimer0);
-            ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
-            ControlPtr->speedCalc.speedUpdateReady = TRUE;
-        }
-    }
     //
     // Acknowledge this interrupt to get more from group 1
     //
@@ -621,7 +633,6 @@ hall_a_isr(void)
 __interrupt void
 hall_b_isr(void)
 {
-    Xint2Count++;
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_6);
     updateHall_B(gpioVal, ControlPtr);
 
@@ -636,13 +647,31 @@ hall_b_isr(void)
 __interrupt void
 hall_c_isr(void)
 {
-    Xint3Count++;
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_7);
     updateHall_C(gpioVal, ControlPtr);
+
+    GPIO_toggle(myGpio, GPIO_Number_28);
+    if (gpioVal == 1){      // Used to get time between rising edge to calculate speed.
+        if (myTimer0->TCR & TIMER_TCR_TSS_BITS){ // If timer is stopped, start timer and begin count
+            //GPIO_setLow(myGpio, GPIO_Number_28);
+            TIMER_reload(myTimer0);
+            TIMER_start(myTimer0);
+        }else {
+            // GPIO_setHigh(myGpio, GPIO_Number_28);
+            TIMER_stop(myTimer0);
+
+            ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
+            ControlPtr->speedCalc.speedUpdateReady = TRUE;
+        }
+    }
     //
     // Acknowledge this interrupt to get more from group 12
     //
     PIE_clearInt(myPie, PIE_GroupNumber_12);
+}
+void updatePWMState(volatile struct EPWM_REGS *pwmReg, pwm_state CSFA, pwm_state CSFB){
+    pwmReg->AQCSFRC.bit.CSFA = CSFA;
+    pwmReg->AQCSFRC.bit.CSFB = CSFB;
 }
 //
 // End of File

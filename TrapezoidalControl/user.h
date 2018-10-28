@@ -5,6 +5,8 @@
  *      Author: Alex
  */
 
+
+
 #ifndef USER_H_
 #define USER_H_
 
@@ -14,9 +16,15 @@
 #define K_I 0;
 #define K_P 0;
 #define RPM_REF_DEFAULT 0;
+
+// PWM Definitions
 #define DUTY_CYCLE_DEFAULT 50;
 #define DUTY_CYCLE_MAX 99;
 #define DUTY_CYCLE_MIN 50;
+#define PWM_FREQ_HZ 10000
+#define TBPRD_VALUE 1500
+
+// Timer Definitions
 #define TIMER_PERIOD 60000000; // 1 Second with 60MHz Clock
 
 #define ADC_REF_VOLTAGE 3.30;
@@ -31,6 +39,17 @@ typedef enum _boolean_{
     TRUE = 1
 }boolean;
 
+typedef enum _motor_phase_{
+    PHASE_A,
+    PHASE_B,
+    PHASE_C
+}motor_phase;
+
+typedef enum _pwm_state_{
+    LOW = 0x1,
+    HIGH = 0x2,
+    PWM = 0x0
+}pwm_state;
 /*
  * hall states based on which hall signals are currently high (the rest are low).
  * For example state C would mean C is high and A and B are low.
@@ -71,8 +90,6 @@ typedef struct _CONTROL_Obj_
     MOTOR_Params motor;
     SPEED_CALC_Obj speedCalc;
     volatile int dutyCycle;
-    int dutyCycleMin;
-    int dutyCycleMax;
     double currentLegA_A;
     double currentLegB_A;
     volatile unsigned int hall_states;
