@@ -5,7 +5,8 @@
  *      Author: Alex
  */
 
-
+#include "DSP28x_Project.h"
+#include "common/include/gpio.h"
 
 #ifndef USER_H_
 #define USER_H_
@@ -13,9 +14,10 @@
 #define NUM_POLE_PAIRS 4;
 #define STALL_CURRENT_A 20.0;
 #define RPM_MAX 1400;
-#define K_I 0;
-#define K_P 0;
-#define RPM_REF_DEFAULT 0;
+#define K_I 0.0; // 0.5 is roughly tuned value for Ki
+#define K_P 0.1; // 0.2 is roughly tuned value for Kp
+#define RPM_REF_DEFAULT 800;
+#define MIN_CLOSED_LOOP_RPM 200
 
 // PWM Definitions
 #define DUTY_CYCLE_DEFAULT 50;
@@ -33,6 +35,12 @@
 #define HALL_A_MASK (0b100)
 #define HALL_B_MASK (0b010)
 #define HALL_C_MASK (0b001)
+
+#define HALL_A_INPUT 12
+#define HALL_B_INPUT 6
+#define HALL_C_INPUT 7
+
+#define GPIO_MODE_GENERAL_PURPOSE 0
 
 typedef enum _boolean_{
     FALSE = 0,
@@ -100,5 +108,7 @@ void initControl(CONTROL_Obj *ControlPtr);
 void updateHall_A(int val, CONTROL_Obj *ControlPtr);
 void updateHall_B(int val, CONTROL_Obj *ControlPtr);
 void updateHall_C(int val, CONTROL_Obj *ControlPtr);
+void initHallStates(GPIO_Handle myGpio, CONTROL_Obj *ControlPtr, GPIO_Number_e HallA, GPIO_Number_e HallB, GPIO_Number_e HallC);
+double updatePI(CONTROL_Obj *ControlPtr);
 
 #endif /* USER_H_ */

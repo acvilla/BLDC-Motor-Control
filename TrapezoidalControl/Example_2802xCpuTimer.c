@@ -67,7 +67,7 @@
 //
 // Function Prototypes
 //
-__interrupt void cpu_timer0_isr(void);
+//__interrupt void cpu_timer0_isr(void);
 __interrupt void cpu_timer1_isr(void);
 __interrupt void cpu_timer2_isr(void);
 __interrupt void adc_isr(void);
@@ -75,6 +75,7 @@ __interrupt void hall_a_isr(void);
 __interrupt void hall_b_isr(void);
 __interrupt void hall_c_isr(void);
 void updatePWMState(volatile struct EPWM_REGS *pwmReg, pwm_state CSFA, pwm_state CSFB);
+void setDutyCycle(uint8_t dutyCycle);
 void initPWM(void);
 
 //
@@ -94,7 +95,8 @@ TIMER_Handle myTimer0, myTimer1;
 PWM_Handle myPwm1, myPwm2, myPwm3;
 CONTROL_Obj Control;
 CONTROL_Obj *ControlPtr = &Control;
-
+uint8_t dutyCycle = 0;
+uint16_t CMP_GLOBAL;
 //
 // Main
 //
@@ -205,8 +207,6 @@ void main(void)
     //
     EALLOW;            // This is needed to write to EALLOW protected registers
 
-    PIE_registerPieIntHandler(myPie, PIE_GroupNumber_1, PIE_SubGroupNumber_7, 
-                              (intVec_t)&cpu_timer0_isr);
     PIE_registerSystemIntHandler(myPie, PIE_SystemInterrupts_TINT1, 
                                  (intVec_t)&cpu_timer1_isr);
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_10, PIE_SubGroupNumber_1,
@@ -250,27 +250,38 @@ void main(void)
     TIMER_stop(myTimer1);
 
         // GPIO28 Output for TESTING XINT1 and XINT2
-        GPIO_setHigh(myGpio, GPIO_Number_28);
-        GPIO_setMode(myGpio, GPIO_Number_28, GPIO_28_Mode_GeneralPurpose);
-        GPIO_setDirection(myGpio, GPIO_Number_28, GPIO_Direction_Output);
+       // GPIO_setHigh(myGpio, GPIO_Number_6);
+       // GPIO_setMode(myGpio, GPIO_Number_6, GPIO_6_Mode_GeneralPurpose);
+       // GPIO_setDirection(myGpio, GPIO_Number_6, GPIO_Direction_Output);
+       // GPIO_setHigh(myGpio, GPIO_Number_6);
 
-       // Set Up GPIO12 (Hall Sensor A) as input.
+        // GPIO29 Output for TESTING XINT1 and XINT2
+       // GPIO_setHigh(myGpio, GPIO_Number_7);
+       // GPIO_setMode(myGpio, GPIO_Number_7, GPIO_7_Mode_GeneralPurpose);
+       // GPIO_setDirection(myGpio, GPIO_Number_7, GPIO_Direction_Output);
+       // GPIO_setHigh(myGpio, GPIO_Number_6);
+
+        GPIO_setHigh(myGpio, GPIO_Number_29);
+        GPIO_setMode(myGpio, GPIO_Number_29, GPIO_29_Mode_GeneralPurpose);
+        GPIO_setDirection(myGpio, GPIO_Number_29, GPIO_Direction_Output);
+
+        // Set Up GPIO12 (Hall Sensor A) as input.
        GPIO_setMode(myGpio, GPIO_Number_12, GPIO_12_Mode_GeneralPurpose);
        GPIO_setDirection(myGpio, GPIO_Number_12, GPIO_Direction_Input);
        GPIO_setQualification(myGpio, GPIO_Number_12, GPIO_Qual_Sample_6);
-       GPIO_setQualificationPeriod(myGpio, GPIO_Number_12, 60); // 60MHz/(2*30) = 1uS
+       GPIO_setQualificationPeriod(myGpio, GPIO_Number_12, 260); // 60MHz/(2*30) = 1uS
 
        // Set Up GPIO6 (Hall Sensor B) as input.s
        GPIO_setMode(myGpio, GPIO_Number_6, GPIO_6_Mode_GeneralPurpose);
        GPIO_setDirection(myGpio, GPIO_Number_6, GPIO_Direction_Input);
        GPIO_setQualification(myGpio, GPIO_Number_6, GPIO_Qual_Sample_6);
-       GPIO_setQualificationPeriod(myGpio, GPIO_Number_6, 60); // 60MHz/(2*30) = 1uS
+       GPIO_setQualificationPeriod(myGpio, GPIO_Number_6, 260); // 60MHz/(2*30) = 1uS
 
        // Set Up GPIO7 (Hall Sensor C) as input.
        GPIO_setMode(myGpio, GPIO_Number_7, GPIO_7_Mode_GeneralPurpose);
        GPIO_setDirection(myGpio, GPIO_Number_7, GPIO_Direction_Input);
        GPIO_setQualification(myGpio, GPIO_Number_7, GPIO_Qual_Sample_6);
-       GPIO_setQualificationPeriod(myGpio, GPIO_Number_7, 60); // 60MHz/(2*30) = 1uS
+       GPIO_setQualificationPeriod(myGpio, GPIO_Number_7, 260); // 60MHz/(2*30) = 1uS
        //
        // GPIO12 is XINT1 (Hall A), GPIO6 is XINT2 (Hall B), GPIO7 is XINT3 (Hall C)
        //
@@ -431,6 +442,7 @@ void main(void)
     //
     CLK_disableTbClockSync(myClk);
     initPWM();
+    initHallStates(myGpio, ControlPtr, GPIO_Number_12, GPIO_Number_6, GPIO_Number_7);
     CLK_enableTbClockSync(myClk);
     for(;;)
       {
@@ -442,10 +454,15 @@ void main(void)
             freqHz = 1/periodSecs;
             ControlPtr->speedCalc.rpm = freqHz * 60.0/ControlPtr->motor.npp; // Update the speed value
             ControlPtr->speedCalc.speedUpdateReady = FALSE;
+            if (ControlPtr->speedCalc.rpm > MIN_CLOSED_LOOP_RPM){
+               dutyCycle = updatePI(ControlPtr);
+               setDutyCycle(dutyCycle);
+            }
         }
           //
           // Trigger XINT1 for testing purposes
           //
+
 
 
         switch (ControlPtr->hall_states){
@@ -515,10 +532,10 @@ void initPWM(void)
     EPwm1Regs.CMPCTL.bit.SHDWBMODE = CC_SHADOW;
     EPwm1Regs.CMPCTL.bit.LOADAMODE = CC_CTR_ZERO; // load on CTR=Zero
     EPwm1Regs.CMPCTL.bit.LOADBMODE = CC_CTR_ZERO; // load on CTR=Zero
-    EPwm1Regs.AQCTLA.bit.CAU = AQ_SET; // set actions for EPWM1A
-    EPwm1Regs.AQCTLA.bit.CAD = AQ_CLEAR;
-    EPwm1Regs.AQCTLB.bit.CBU = AQ_CLEAR; // set actions for EPWM1A
-    EPwm1Regs.AQCTLB.bit.CBD = AQ_SET;
+    EPwm1Regs.AQCTLA.bit.CAU = AQ_CLEAR; // set actions for EPWM1A
+    EPwm1Regs.AQCTLA.bit.CAD = AQ_SET;
+    EPwm1Regs.AQCTLB.bit.CBU = AQ_SET; // set actions for EPWM1A
+    EPwm1Regs.AQCTLB.bit.CBD = AQ_CLEAR;
 
    //EPwm1Regs.AQCSFRC.bit.CSFA = 0x0; // PWM still on
    //EPwm1Regs.AQCSFRC.bit.CSFA = 0x1; // Use these commands to force PWM outputs low or high
@@ -536,10 +553,10 @@ void initPWM(void)
     EPwm2Regs.CMPCTL.bit.SHDWBMODE = CC_SHADOW;
     EPwm2Regs.CMPCTL.bit.LOADAMODE = CC_CTR_ZERO; // load on CTR=Zero
     EPwm2Regs.CMPCTL.bit.LOADBMODE = CC_CTR_ZERO; // load on CTR=Zero
-    EPwm2Regs.AQCTLA.bit.CAU = AQ_SET; // set actions for EPWM2A
-    EPwm2Regs.AQCTLA.bit.CAD = AQ_CLEAR;
-    EPwm2Regs.AQCTLB.bit.CBU = AQ_CLEAR; // set actions for EPWM1A
-    EPwm2Regs.AQCTLB.bit.CBD = AQ_SET;
+    EPwm2Regs.AQCTLA.bit.CAU = AQ_CLEAR; // set actions for EPWM2A
+    EPwm2Regs.AQCTLA.bit.CAD = AQ_SET;
+    EPwm2Regs.AQCTLB.bit.CBU = AQ_SET; // set actions for EPWM1A
+    EPwm2Regs.AQCTLB.bit.CBD = AQ_CLEAR;
 
     // EPWM Module 3 config
     EPwm3Regs.TBPRD = TBPRD_VALUE;
@@ -553,37 +570,36 @@ void initPWM(void)
     EPwm3Regs.CMPCTL.bit.SHDWBMODE = CC_SHADOW;
     EPwm3Regs.CMPCTL.bit.LOADAMODE = CC_CTR_ZERO; // load on CTR=Zero
     EPwm3Regs.CMPCTL.bit.LOADBMODE = CC_CTR_ZERO; // load on CTR=Zero
-    EPwm3Regs.AQCTLA.bit.CAU = AQ_SET; // set actions for EPWM3A
-    EPwm3Regs.AQCTLA.bit.CAD = AQ_CLEAR;
-    EPwm3Regs.AQCTLB.bit.CBU = AQ_CLEAR; // set actions for EPWM1A
-    EPwm3Regs.AQCTLB.bit.CBD = AQ_SET;
+    EPwm3Regs.AQCTLA.bit.CAU = AQ_CLEAR; // set actions for EPWM3A
+    EPwm3Regs.AQCTLA.bit.CAD = AQ_SET;
+    EPwm3Regs.AQCTLB.bit.CBU = AQ_SET; // set actions for EPWM1A
+    EPwm3Regs.AQCTLB.bit.CBD = AQ_CLEAR;
 
 
-    EPwm1Regs.CMPA.half.CMPA = 900; // adjust duty for output EPWM1A
-    EPwm1Regs.CMPB = 600; // adjust duty for output EPWM3B
+    EPwm1Regs.CMPA.half.CMPA = 750; // adjust duty for output EPWM1A
+    EPwm1Regs.CMPB = 750; // adjust duty for output EPWM3B
 
     EPwm2Regs.CMPA.half.CMPA = 750; // adjust duty for output EPWM2A
     EPwm2Regs.CMPB = 750; // adjust duty for output EPWM3B
 
-    EPwm3Regs.CMPA.half.CMPA = 900; // adjust duty for output EPWM3A
-    EPwm3Regs.CMPB = 600; // adjust duty for output EPWM3B
+    EPwm3Regs.CMPA.half.CMPA = 750; // adjust duty for output EPWM3A
+    EPwm3Regs.CMPB = 750; // adjust duty for output EPWM3B
 
 
 }
 
+void setDutyCycle(uint8_t dutyCycle){
+    double duty = (double) dutyCycle/255;
+    uint16_t CMP = (duty * TBPRD_VALUE/2) + TBPRD_VALUE/2;
+    CMP_GLOBAL = CMP;
+    EPwm1Regs.CMPA.half.CMPA = CMP; // adjust duty for output EPWM1A
+    EPwm1Regs.CMPB = CMP; // adjust duty for output EPWM3B
 
-//
-// cpu_timer0_isr - 
-//
-__interrupt void
-cpu_timer0_isr(void)
-{
+    EPwm2Regs.CMPA.half.CMPA = CMP; // adjust duty for output EPWM2A
+    EPwm2Regs.CMPB = CMP; // adjust duty for output EPWM3B
 
-    //
-    // Acknowledge this interrupt to receive more interrupts from group 1
-    //
-    //PieCtrlRegs.PIEACK.all = PIEACK_GROUP1;
-    PIE_clearInt(myPie, PIE_GroupNumber_1);
+    EPwm3Regs.CMPA.half.CMPA = CMP; // adjust duty for output EPWM3A
+    EPwm3Regs.CMPB = CMP; // adjust duty for output EPWM3B
 }
 
 //
@@ -597,6 +613,8 @@ cpu_timer1_isr(void)
      */
 
     // ADC SOC should occurs when this interrupt fires
+
+
 }
 
 //
@@ -636,6 +654,8 @@ hall_b_isr(void)
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_6);
     updateHall_B(gpioVal, ControlPtr);
 
+
+
     //
     // Acknowledge this interrupt to get more from group 1
     //
@@ -649,26 +669,29 @@ hall_c_isr(void)
 {
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_7);
     updateHall_C(gpioVal, ControlPtr);
-
-    GPIO_toggle(myGpio, GPIO_Number_28);
+    GPIO_toggle(myGpio, GPIO_Number_29);
     if (gpioVal == 1){      // Used to get time between rising edge to calculate speed.
+        //GPIO_setHigh(myGpio, GPIO_Number_29);
+    } else {
         if (myTimer0->TCR & TIMER_TCR_TSS_BITS){ // If timer is stopped, start timer and begin count
-            //GPIO_setLow(myGpio, GPIO_Number_28);
-            TIMER_reload(myTimer0);
-            TIMER_start(myTimer0);
+                   //GPIO_setLow(myGpio, GPIO_Number_28);
+                   TIMER_reload(myTimer0);
+                   TIMER_start(myTimer0);
         }else {
             // GPIO_setHigh(myGpio, GPIO_Number_28);
             TIMER_stop(myTimer0);
 
             ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
             ControlPtr->speedCalc.speedUpdateReady = TRUE;
-        }
+         }
+         //GPIO_setLow(myGpio, GPIO_Number_29);
     }
     //
     // Acknowledge this interrupt to get more from group 12
     //
     PIE_clearInt(myPie, PIE_GroupNumber_12);
 }
+
 void updatePWMState(volatile struct EPWM_REGS *pwmReg, pwm_state CSFA, pwm_state CSFB){
     pwmReg->AQCSFRC.bit.CSFA = CSFA;
     pwmReg->AQCSFRC.bit.CSFB = CSFB;

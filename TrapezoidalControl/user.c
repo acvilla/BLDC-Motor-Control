@@ -7,6 +7,7 @@
 
 #include "user.h"
 
+
 void initControl (CONTROL_Obj *ControlPtr) {
     ControlPtr->piController.k_i = K_I;
     ControlPtr->piController.k_p = K_P;
@@ -46,5 +47,42 @@ void updateHall_C(int val, CONTROL_Obj *ControlPtr){
     }
 }
 
+void initHallStates(GPIO_Handle myGpio, CONTROL_Obj *ControlPtr, GPIO_Number_e HallA, GPIO_Number_e HallB, GPIO_Number_e HallC){
+    int aVal = GPIO_getData(myGpio, HallA);
+    int bVal = GPIO_getData(myGpio, HallB);
+    int cVal = GPIO_getData(myGpio, HallC);
+    updateHall_A(aVal, ControlPtr);
+    updateHall_B(bVal, ControlPtr);
+    updateHall_C(cVal, ControlPtr);
+}
+
+double updatePI(CONTROL_Obj *ControlPtr){
+    //ControlPtr->speedCalc.rpmRef = 1200;
+    double cmd = ControlPtr->speedCalc.rpmRef;
+    double speed = ControlPtr->speedCalc.rpm;
+    double error = cmd - speed;
+
+    double pTerm = ControlPtr->piController.k_p * error;
+
+    static double iState;
+    iState += error;
+    if(iState > 255){
+        iState = 255;
+    } else if (iState < -255){
+        iState = -255;
+    }
+
+    double iTerm = ControlPtr->piController.k_i * iState;
+
+    double pi = pTerm + iTerm;
+    if (pi < 0){
+         pi = 0;
+    } else if(pi > 255){
+         pi = 255;
+    }
+
+    return pi;
+
+}
 
 
