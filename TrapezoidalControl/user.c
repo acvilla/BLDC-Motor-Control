@@ -15,8 +15,10 @@ void initControl (CONTROL_Obj *ControlPtr) {
     ControlPtr->motor.npp = NUM_POLE_PAIRS;
     ControlPtr->motor.stallCurrent_A = STALL_CURRENT_A;
     ControlPtr->speedCalc.rpmRef = RPM_REF_DEFAULT;
+    ControlPtr->speedCalc.rpm = 0;
     ControlPtr->speedCalc.speedUpdateReady = FALSE;
     ControlPtr->speedCalc.timerPeriod = TIMER_PERIOD;
+    ControlPtr->speedCalc.timerVal = 0;
     ControlPtr->speedCalc.rpmMax = RPM_MAX;
     ControlPtr->currentLegA_A = 0;
     ControlPtr->currentLegB_A = 0;

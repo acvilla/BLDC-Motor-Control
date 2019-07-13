@@ -11,6 +11,7 @@ GEN_CMDS__FLAG :=
 
 ORDERED_OBJS += \
 "./Example_2802xCpuTimer.obj" \
+"./printf.obj" \
 "./uart.obj" \
 "./user.obj" \
 "C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/headers/cmd/F2802x_Headers_nonBIOS.cmd" \
@@ -158,8 +159,8 @@ Example_F2802xCpuTimer.hex: $(EXE_OUTPUTS)
 # Other Targets
 clean:
 	-$(RM) $(BIN_OUTPUTS__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "Example_2802xCpuTimer.obj" "uart.obj" "user.obj" 
-	-$(RM) "Example_2802xCpuTimer.d" "uart.d" "user.d" 
+	-$(RM) "Example_2802xCpuTimer.obj" "printf.obj" "uart.obj" "user.obj" 
+	-$(RM) "Example_2802xCpuTimer.d" "printf.d" "uart.d" "user.d" 
 	-@echo 'Finished clean'
 	-@echo ' '
 

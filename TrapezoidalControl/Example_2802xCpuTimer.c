@@ -64,6 +64,8 @@
 #include "common/include/wdog.h"
 #include "user.h"
 #include "uart.h"
+#include "printf.h"
+
 
 //
 // Function Prototypes
@@ -374,7 +376,6 @@ void main(void)
     scia_fifo_init();           // Initialize the SCI FIFO
     char *msg = "\r\n\n\nHello World!\0";
     char buf[50];
-    int data = 50;
     scia_msg(msg);
     initHallStates(myGpio, ControlPtr, GPIO_Number_12, GPIO_Number_6, GPIO_Number_7);
     for(;;)
@@ -393,10 +394,9 @@ void main(void)
             }
         }
 
-        msg = "\rHello World!\0";
 
-        itoa(buf, data);
-
+        //itoa(buf, (int) ControlPtr->speedCalc.rpm);
+        snprintf(buf, sizeof(buf), "{RPM: %f, Battery: %d}\n\r", ControlPtr->speedCalc.rpm, 100);
         scia_msg(buf);
 
 
@@ -716,7 +716,8 @@ void itoa(char *buf, int data)
             if(n == 0)
             {
                 buf[0] = '0';
-                buf[1] = '\0';
+                buf[1] = '\n';
+                buf[2] = '\0';
             }
 }
 //

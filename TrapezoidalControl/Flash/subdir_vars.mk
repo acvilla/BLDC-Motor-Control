@@ -13,31 +13,37 @@ C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/ccs/Debug/drive
 
 C_SRCS += \
 ../Example_2802xCpuTimer.c \
+../printf.c \
 ../uart.c \
 ../user.c 
 
 C_DEPS += \
 ./Example_2802xCpuTimer.d \
+./printf.d \
 ./uart.d \
 ./user.d 
 
 OBJS += \
 ./Example_2802xCpuTimer.obj \
+./printf.obj \
 ./uart.obj \
 ./user.obj 
 
 OBJS__QUOTED += \
 "Example_2802xCpuTimer.obj" \
+"printf.obj" \
 "uart.obj" \
 "user.obj" 
 
 C_DEPS__QUOTED += \
 "Example_2802xCpuTimer.d" \
+"printf.d" \
 "uart.d" \
 "user.d" 
 
 C_SRCS__QUOTED += \
 "../Example_2802xCpuTimer.c" \
+"../printf.c" \
 "../uart.c" \
 "../user.c" 
 
