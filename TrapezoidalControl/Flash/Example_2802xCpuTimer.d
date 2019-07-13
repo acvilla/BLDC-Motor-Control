@@ -42,6 +42,8 @@ Example_2802xCpuTimer.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2
 Example_2802xCpuTimer.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/timer.h
 Example_2802xCpuTimer.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/wdog.h
 Example_2802xCpuTimer.obj: ../user.h
+Example_2802xCpuTimer.obj: ../uart.h
+Example_2802xCpuTimer.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/sci.h
 
 ../Example_2802xCpuTimer.c: 
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/DSP28x_Project.h: 
@@ -85,3 +87,5 @@ C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/pll.h:
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/timer.h: 
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/wdog.h: 
 ../user.h: 
+../uart.h: 
+C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/sci.h: 

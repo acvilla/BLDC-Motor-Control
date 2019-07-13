@@ -34,6 +34,8 @@ user.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/inclu
 user.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/f2802x_defaultisr.h
 user.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/gpio.h
 user.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/cpu.h
+user.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/clk.h
+user.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/pwm.h
 
 ../user.c: 
 ../user.h: 
@@ -69,3 +71,5 @@ C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/f2802x_
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/f2802x_defaultisr.h: 
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/gpio.h: 
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/cpu.h: 
+C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/clk.h: 
+C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/pwm.h: 

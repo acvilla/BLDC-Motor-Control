@@ -63,6 +63,7 @@
 #include "common/include/timer.h"
 #include "common/include/wdog.h"
 #include "user.h"
+#include "uart.h"
 
 //
 // Function Prototypes
@@ -77,6 +78,9 @@ __interrupt void hall_c_isr(void);
 void updatePWMState(volatile struct EPWM_REGS *pwmReg, pwm_state CSFA, pwm_state CSFB);
 void setDutyCycle(uint8_t dutyCycle);
 void initPWM(void);
+void initGPIO(void);
+void initADC(void);
+void itoa(char *buf, int data);
 
 //
 // Globals
@@ -93,6 +97,7 @@ GPIO_Handle myGpio;
 PIE_Handle myPie;
 TIMER_Handle myTimer0, myTimer1;
 PWM_Handle myPwm1, myPwm2, myPwm3;
+SCI_Handle mySci;
 CONTROL_Obj Control;
 CONTROL_Obj *ControlPtr = &Control;
 uint8_t dutyCycle = 0;
@@ -122,6 +127,7 @@ void main(void)
     myPwm1 = PWM_init((void *)PWM_ePWM1_BASE_ADDR, sizeof(PWM_Obj));
     myPwm2 = PWM_init((void *)PWM_ePWM2_BASE_ADDR, sizeof(PWM_Obj));
     myPwm3 = PWM_init((void *)PWM_ePWM3_BASE_ADDR, sizeof(PWM_Obj));
+    mySci = SCI_init((void *)SCIA_BASE_ADDR, sizeof(SCI_Obj));
 
     /*
      * Initialize the Main Control Object.
@@ -249,78 +255,20 @@ void main(void)
     TIMER_stop(myTimer0);
     TIMER_stop(myTimer1);
 
-        // GPIO28 Output for TESTING XINT1 and XINT2
-       // GPIO_setHigh(myGpio, GPIO_Number_6);
-       // GPIO_setMode(myGpio, GPIO_Number_6, GPIO_6_Mode_GeneralPurpose);
-       // GPIO_setDirection(myGpio, GPIO_Number_6, GPIO_Direction_Output);
-       // GPIO_setHigh(myGpio, GPIO_Number_6);
-
-        // GPIO29 Output for TESTING XINT1 and XINT2
-       // GPIO_setHigh(myGpio, GPIO_Number_7);
-       // GPIO_setMode(myGpio, GPIO_Number_7, GPIO_7_Mode_GeneralPurpose);
-       // GPIO_setDirection(myGpio, GPIO_Number_7, GPIO_Direction_Output);
-       // GPIO_setHigh(myGpio, GPIO_Number_6);
-
-        GPIO_setHigh(myGpio, GPIO_Number_29);
-        GPIO_setMode(myGpio, GPIO_Number_29, GPIO_29_Mode_GeneralPurpose);
-        GPIO_setDirection(myGpio, GPIO_Number_29, GPIO_Direction_Output);
-
-        // Set Up GPIO12 (Hall Sensor A) as input.
-       GPIO_setMode(myGpio, GPIO_Number_12, GPIO_12_Mode_GeneralPurpose);
-       GPIO_setDirection(myGpio, GPIO_Number_12, GPIO_Direction_Input);
-       GPIO_setQualification(myGpio, GPIO_Number_12, GPIO_Qual_Sample_6);
-       GPIO_setQualificationPeriod(myGpio, GPIO_Number_12, 260); // 60MHz/(2*30) = 1uS
-
-       // Set Up GPIO6 (Hall Sensor B) as input.s
-       GPIO_setMode(myGpio, GPIO_Number_6, GPIO_6_Mode_GeneralPurpose);
-       GPIO_setDirection(myGpio, GPIO_Number_6, GPIO_Direction_Input);
-       GPIO_setQualification(myGpio, GPIO_Number_6, GPIO_Qual_Sample_6);
-       GPIO_setQualificationPeriod(myGpio, GPIO_Number_6, 260); // 60MHz/(2*30) = 1uS
-
-       // Set Up GPIO7 (Hall Sensor C) as input.
-       GPIO_setMode(myGpio, GPIO_Number_7, GPIO_7_Mode_GeneralPurpose);
-       GPIO_setDirection(myGpio, GPIO_Number_7, GPIO_Direction_Input);
-       GPIO_setQualification(myGpio, GPIO_Number_7, GPIO_Qual_Sample_6);
-       GPIO_setQualificationPeriod(myGpio, GPIO_Number_7, 260); // 60MHz/(2*30) = 1uS
-       //
-       // GPIO12 is XINT1 (Hall A), GPIO6 is XINT2 (Hall B), GPIO7 is XINT3 (Hall C)
-       //
-       GPIO_setExtInt(myGpio, GPIO_Number_12, CPU_ExtIntNumber_1);
-       GPIO_setExtInt(myGpio, GPIO_Number_6, CPU_ExtIntNumber_2);
-       GPIO_setExtInt(myGpio, GPIO_Number_7, CPU_ExtIntNumber_3);
-
-       //
-       // Initialize GPIO
-       //
-       GPIO_setPullUp(myGpio, GPIO_Number_0, GPIO_PullUp_Disable);
-       GPIO_setPullUp(myGpio, GPIO_Number_1, GPIO_PullUp_Disable);
-       GPIO_setMode(myGpio, GPIO_Number_0, GPIO_0_Mode_EPWM1A);
-       GPIO_setMode(myGpio, GPIO_Number_1, GPIO_1_Mode_EPWM1B);
-
-           GPIO_setPullUp(myGpio, GPIO_Number_2, GPIO_PullUp_Disable);
-           GPIO_setPullUp(myGpio, GPIO_Number_3, GPIO_PullUp_Disable);
-           GPIO_setMode(myGpio, GPIO_Number_2, GPIO_2_Mode_EPWM2A);
-           GPIO_setMode(myGpio, GPIO_Number_3, GPIO_3_Mode_EPWM2B);
-
-           GPIO_setPullUp(myGpio, GPIO_Number_4, GPIO_PullUp_Disable);
-           GPIO_setPullUp(myGpio, GPIO_Number_5, GPIO_PullUp_Disable);
-           GPIO_setMode(myGpio, GPIO_Number_4, GPIO_4_Mode_EPWM3A);
-           GPIO_setMode(myGpio, GPIO_Number_5, GPIO_5_Mode_EPWM3B);
-
-
+    initGPIO();
        //
        // Configure XINT1
        //
-       PIE_setExtIntPolarity(myPie, CPU_ExtIntNumber_1, PIE_ExtIntPolarity_RisingAndFallingEdge);
-       PIE_setExtIntPolarity(myPie, CPU_ExtIntNumber_2, PIE_ExtIntPolarity_RisingAndFallingEdge);
-       PIE_setExtIntPolarity(myPie, CPU_ExtIntNumber_3, PIE_ExtIntPolarity_RisingAndFallingEdge);
+     PIE_setExtIntPolarity(myPie, CPU_ExtIntNumber_1, PIE_ExtIntPolarity_RisingAndFallingEdge);
+     PIE_setExtIntPolarity(myPie, CPU_ExtIntNumber_2, PIE_ExtIntPolarity_RisingAndFallingEdge);
+     PIE_setExtIntPolarity(myPie, CPU_ExtIntNumber_3, PIE_ExtIntPolarity_RisingAndFallingEdge);
 
        //
        // Enable XINT1
        //
-       PIE_enableExtInt(myPie, CPU_ExtIntNumber_1);
-       PIE_enableExtInt(myPie, CPU_ExtIntNumber_2);
-       PIE_enableExtInt(myPie, CPU_ExtIntNumber_3);
+     PIE_enableExtInt(myPie, CPU_ExtIntNumber_1);
+     PIE_enableExtInt(myPie, CPU_ExtIntNumber_2);
+     PIE_enableExtInt(myPie, CPU_ExtIntNumber_3);
 
 
 
@@ -360,29 +308,7 @@ void main(void)
     TIMER_reload(myTimer1);
     TIMER_setEmulationMode(myTimer1, 
                            TIMER_EmulationMode_StopAfterNextDecrement);
-    TIMER_enableInt(myTimer1);
-
-
-    //
-    // Initialize the ADC
-    //
-    ADC_enableBandGap(myAdc);
-    ADC_enableRefBuffers(myAdc);
-    ADC_powerUp(myAdc);
-    ADC_enable(myAdc);
-    ADC_setVoltRefSrc(myAdc, ADC_VoltageRefSrc_Int);
-
-    ADC_setIntPulseGenMode(myAdc, ADC_IntPulseGenMode_Prior);
-    ADC_enableInt(myAdc, ADC_IntNumber_1);
-    ADC_setIntMode(myAdc, ADC_IntNumber_1, ADC_IntMode_EOC);
-    ADC_setIntSrc(myAdc, ADC_IntNumber_1, ADC_IntSrc_EOC0);
-    ADC_setSocChanNumber (myAdc, ADC_SocNumber_0, ADC_SocChanNumber_A6);
-    ADC_setSocTrigSrc(myAdc, ADC_SocNumber_0, ADC_SocTrigSrc_CpuTimer_1);
-    ADC_setSocSampleWindow(myAdc, ADC_SocNumber_0,
-                              ADC_SocSampleWindow_37_cycles);
-    PIE_enableAdcInt(myPie, ADC_IntNumber_1);
-
-
+    //TIMER_enableInt(myTimer1);
     //
     // To ensure precise timing, use write-only instructions to write to the 
     // entire register. Therefore, if any of the configuration bits are changed
@@ -442,8 +368,15 @@ void main(void)
     //
     CLK_disableTbClockSync(myClk);
     initPWM();
-    initHallStates(myGpio, ControlPtr, GPIO_Number_12, GPIO_Number_6, GPIO_Number_7);
     CLK_enableTbClockSync(myClk);
+    initADC();
+    scia_init();                // Initialize SCI
+    scia_fifo_init();           // Initialize the SCI FIFO
+    char *msg = "\r\n\n\nHello World!\0";
+    char buf[50];
+    int data = 50;
+    scia_msg(msg);
+    initHallStates(myGpio, ControlPtr, GPIO_Number_12, GPIO_Number_6, GPIO_Number_7);
     for(;;)
       {
         if (ControlPtr->speedCalc.speedUpdateReady == TRUE){
@@ -455,17 +388,20 @@ void main(void)
             ControlPtr->speedCalc.rpm = freqHz * 60.0/ControlPtr->motor.npp; // Update the speed value
             ControlPtr->speedCalc.speedUpdateReady = FALSE;
             if (ControlPtr->speedCalc.rpm > MIN_CLOSED_LOOP_RPM){
-               dutyCycle = updatePI(ControlPtr);
-               setDutyCycle(dutyCycle);
+               //dutyCycle = updatePI(ControlPtr);
+               //setDutyCycle(dutyCycle);
             }
         }
-          //
-          // Trigger XINT1 for testing purposes
-          //
+
+        msg = "\rHello World!\0";
+
+        itoa(buf, data);
+
+        scia_msg(buf);
 
 
 
-        switch (ControlPtr->hall_states){
+        switch (ControlPtr->currentHallStates){
         case C:
             // Phases: Aoff, B+, C-
             updatePWMState(&EPwm1Regs, LOW, LOW); // Phase A
@@ -505,16 +441,86 @@ void main(void)
         default:
             break;
         }
-         //GPIO_setLow(myGpio, GPIO_Number_28);
-         //DELAY_US(50000);                      // Wait for Qual period
-         //GPIO_setHigh(myGpio, GPIO_Number_28);
-         //DELAY_US(50000);                      // Wait for Qual period
 
       }
 
 }
 
+void initGPIO(void){
+        // Set GPIO28 at RX and GPIO29 as TX for SCIA
+        GPIO_setPullUp(myGpio, GPIO_Number_28, GPIO_PullUp_Enable);
+        GPIO_setPullUp(myGpio, GPIO_Number_29, GPIO_PullUp_Disable);
+        GPIO_setQualification(myGpio, GPIO_Number_28, GPIO_Qual_ASync);
+        GPIO_setMode(myGpio, GPIO_Number_28, GPIO_28_Mode_SCIRXDA);
+        GPIO_setMode(myGpio, GPIO_Number_29, GPIO_29_Mode_SCITXDA);
 
+         // Set Up GPIO12 (Hall Sensor A) as input.
+        GPIO_setMode(myGpio, GPIO_Number_12, GPIO_12_Mode_GeneralPurpose);
+        GPIO_setDirection(myGpio, GPIO_Number_12, GPIO_Direction_Input);
+        GPIO_setQualification(myGpio, GPIO_Number_12, GPIO_Qual_Sample_6);
+        GPIO_setQualificationPeriod(myGpio, GPIO_Number_12, 0xFF); // 60MHz/(2*30) = 1uS
+
+        // Set Up GPIO6 (Hall Sensor B) as input
+        GPIO_setMode(myGpio, GPIO_Number_6, GPIO_6_Mode_GeneralPurpose);
+        GPIO_setDirection(myGpio, GPIO_Number_6, GPIO_Direction_Input);
+        GPIO_setQualification(myGpio, GPIO_Number_6, GPIO_Qual_Sample_6);
+        GPIO_setQualificationPeriod(myGpio, GPIO_Number_6, 0xFF); // 60MHz/(2*30) = 1uS
+
+        // Set Up GPIO7 (Hall Sensor C) as input.
+        GPIO_setMode(myGpio, GPIO_Number_7, GPIO_7_Mode_GeneralPurpose);
+        GPIO_setDirection(myGpio, GPIO_Number_7, GPIO_Direction_Input);
+        GPIO_setQualification(myGpio, GPIO_Number_7, GPIO_Qual_Sample_6);
+        GPIO_setQualificationPeriod(myGpio, GPIO_Number_7, 0xFF); // 60MHz/(2*30) = 1uS
+
+        GPIO_setPullUp(myGpio, GPIO_Number_12, GPIO_PullUp_Enable);
+        GPIO_setPullUp(myGpio, GPIO_Number_6, GPIO_PullUp_Enable);
+        GPIO_setPullUp(myGpio, GPIO_Number_7, GPIO_PullUp_Enable);
+        //
+        // GPIO12 is XINT1 (Hall A), GPIO6 is XINT2 (Hall B), GPIO7 is XINT3 (Hall C)
+        //
+        GPIO_setExtInt(myGpio, GPIO_Number_12, CPU_ExtIntNumber_1);
+        GPIO_setExtInt(myGpio, GPIO_Number_6, CPU_ExtIntNumber_2);
+        GPIO_setExtInt(myGpio, GPIO_Number_7, CPU_ExtIntNumber_3);
+
+        //
+        // Initialize GPIO for PWM
+        //
+        GPIO_setPullUp(myGpio, GPIO_Number_0, GPIO_PullUp_Disable);
+        GPIO_setPullUp(myGpio, GPIO_Number_1, GPIO_PullUp_Disable);
+        GPIO_setMode(myGpio, GPIO_Number_0, GPIO_0_Mode_EPWM1A);
+        GPIO_setMode(myGpio, GPIO_Number_1, GPIO_1_Mode_EPWM1B);
+
+        GPIO_setPullUp(myGpio, GPIO_Number_2, GPIO_PullUp_Disable);
+        GPIO_setPullUp(myGpio, GPIO_Number_3, GPIO_PullUp_Disable);
+        GPIO_setMode(myGpio, GPIO_Number_2, GPIO_2_Mode_EPWM2A);
+        GPIO_setMode(myGpio, GPIO_Number_3, GPIO_3_Mode_EPWM2B);
+
+        GPIO_setPullUp(myGpio, GPIO_Number_4, GPIO_PullUp_Disable);
+        GPIO_setPullUp(myGpio, GPIO_Number_5, GPIO_PullUp_Disable);
+        GPIO_setMode(myGpio, GPIO_Number_4, GPIO_4_Mode_EPWM3A);
+        GPIO_setMode(myGpio, GPIO_Number_5, GPIO_5_Mode_EPWM3B);
+}
+
+void initADC(void){
+    //
+       // Initialize the ADC
+       //
+       ADC_enableBandGap(myAdc);
+       ADC_enableRefBuffers(myAdc);
+       ADC_powerUp(myAdc);
+       ADC_enable(myAdc);
+       ADC_setVoltRefSrc(myAdc, ADC_VoltageRefSrc_Int);
+
+       ADC_setIntPulseGenMode(myAdc, ADC_IntPulseGenMode_Prior);
+       ADC_enableInt(myAdc, ADC_IntNumber_1);
+       ADC_setIntMode(myAdc, ADC_IntNumber_1, ADC_IntMode_EOC);
+       ADC_setIntSrc(myAdc, ADC_IntNumber_1, ADC_IntSrc_EOC0);
+       ADC_setSocChanNumber (myAdc, ADC_SocNumber_0, ADC_SocChanNumber_A6);
+       ADC_setSocTrigSrc(myAdc, ADC_SocNumber_0, ADC_SocTrigSrc_CpuTimer_1);
+       ADC_setSocSampleWindow(myAdc, ADC_SocNumber_0,
+                                 ADC_SocSampleWindow_37_cycles);
+       PIE_enableAdcInt(myPie, ADC_IntNumber_1);
+}
 
 void initPWM(void)
 {
@@ -588,19 +594,6 @@ void initPWM(void)
 
 }
 
-void setDutyCycle(uint8_t dutyCycle){
-    double duty = (double) dutyCycle/255;
-    uint16_t CMP = (duty * TBPRD_VALUE/2) + TBPRD_VALUE/2;
-    CMP_GLOBAL = CMP;
-    EPwm1Regs.CMPA.half.CMPA = CMP; // adjust duty for output EPWM1A
-    EPwm1Regs.CMPB = CMP; // adjust duty for output EPWM3B
-
-    EPwm2Regs.CMPA.half.CMPA = CMP; // adjust duty for output EPWM2A
-    EPwm2Regs.CMPB = CMP; // adjust duty for output EPWM3B
-
-    EPwm3Regs.CMPA.half.CMPA = CMP; // adjust duty for output EPWM3A
-    EPwm3Regs.CMPB = CMP; // adjust duty for output EPWM3B
-}
 
 //
 // cpu_timer1_isr - 
@@ -609,10 +602,10 @@ __interrupt void
 cpu_timer1_isr(void)
 {
     /*
-     * Main ISR: Sample Throttle to calculate speed ref. Update duty cycle.
+     * Main ISR: Sample Throttle to calculate speed ref.
      */
 
-    // ADC SOC should occurs when this interrupt fires
+    // ADC SOC should occur when this interrupt fires
 
 
 }
@@ -623,10 +616,9 @@ cpu_timer1_isr(void)
 __interrupt void
 adc_isr(void)
 {
-    double result = ADC_readResult(myAdc, ADC_ResultNumber_0);
-    result = result/4095;
-    double sf = ADC_REF_VOLTAGE; // multiply bits by scale factor
-    result = result*sf; // final result
+    unsigned int adc_counts = ADC_readResult(myAdc, ADC_ResultNumber_0);
+    double result = (double)(adc_counts*ControlPtr->speedCalc.rpmMax)/((1 << NUM_ADC_BITS) - 1);
+    ControlPtr->speedCalc.rpmRef = result; // Update the command value used by the PI controller
     ADC_clearIntFlag(myAdc, ADC_IntNumber_1);
     PIE_clearInt(myPie, PIE_GroupNumber_10);
     return;
@@ -639,7 +631,7 @@ hall_a_isr(void)
 {
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_12);
     updateHall_A(gpioVal, ControlPtr);
-
+    checkHallErr(ControlPtr);
     //
     // Acknowledge this interrupt to get more from group 1
     //
@@ -653,7 +645,24 @@ hall_b_isr(void)
 {
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_6);
     updateHall_B(gpioVal, ControlPtr);
+    checkHallErr(ControlPtr);
+    GPIO_toggle(myGpio, GPIO_Number_29);
+      if (gpioVal == 1){      // Used to get time between rising edge to calculate speed.
+          //GPIO_setHigh(myGpio, GPIO_Number_29);
+      } else {
+          if (myTimer0->TCR & TIMER_TCR_TSS_BITS){ // If timer is stopped, start timer and begin count
+                     //GPIO_setLow(myGpio, GPIO_Number_28);
+                     TIMER_reload(myTimer0);
+                     TIMER_start(myTimer0);
+          }else {
+              // GPIO_setHigh(myGpio, GPIO_Number_28);
+              TIMER_stop(myTimer0);
 
+              ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
+              ControlPtr->speedCalc.speedUpdateReady = TRUE;
+           }
+           //GPIO_setLow(myGpio, GPIO_Number_29);
+      }
 
 
     //
@@ -669,32 +678,46 @@ hall_c_isr(void)
 {
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_7);
     updateHall_C(gpioVal, ControlPtr);
-    GPIO_toggle(myGpio, GPIO_Number_29);
-    if (gpioVal == 1){      // Used to get time between rising edge to calculate speed.
-        //GPIO_setHigh(myGpio, GPIO_Number_29);
-    } else {
-        if (myTimer0->TCR & TIMER_TCR_TSS_BITS){ // If timer is stopped, start timer and begin count
-                   //GPIO_setLow(myGpio, GPIO_Number_28);
-                   TIMER_reload(myTimer0);
-                   TIMER_start(myTimer0);
-        }else {
-            // GPIO_setHigh(myGpio, GPIO_Number_28);
-            TIMER_stop(myTimer0);
-
-            ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
-            ControlPtr->speedCalc.speedUpdateReady = TRUE;
-         }
-         //GPIO_setLow(myGpio, GPIO_Number_29);
-    }
+    checkHallErr(ControlPtr);
     //
     // Acknowledge this interrupt to get more from group 12
     //
     PIE_clearInt(myPie, PIE_GroupNumber_12);
 }
 
-void updatePWMState(volatile struct EPWM_REGS *pwmReg, pwm_state CSFA, pwm_state CSFB){
-    pwmReg->AQCSFRC.bit.CSFA = CSFA;
-    pwmReg->AQCSFRC.bit.CSFB = CSFB;
+void itoa(char *buf, int data)
+{
+    int n = data;
+    int i = 0;
+
+    bool isNeg = n<0;
+
+            unsigned int n1 = isNeg ? -n : n;
+
+            while(n1!=0)
+            {
+                buf[i++] = n1%10+'0';
+                n1=n1/10;
+            }
+
+            if(isNeg)
+                buf[i++] = '-';
+
+            buf[i] = '\n'; // insert newline
+            buf[i+1] = '\0';
+            int t;
+            for(t = 0; t < i/2; t++)
+            {
+                buf[t] ^= buf[i-t-1];
+                buf[i-t-1] ^= buf[t];
+                buf[t] ^= buf[i-t-1];
+            }
+
+            if(n == 0)
+            {
+                buf[0] = '0';
+                buf[1] = '\0';
+            }
 }
 //
 // End of File

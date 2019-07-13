@@ -11,6 +11,7 @@ GEN_CMDS__FLAG :=
 
 ORDERED_OBJS += \
 "./Example_2802xCpuTimer.obj" \
+"./uart.obj" \
 "./user.obj" \
 "C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/headers/cmd/F2802x_Headers_nonBIOS.cmd" \
 "C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/ccs/Debug/driverlib.lib" \
@@ -143,7 +144,7 @@ all: Example_F2802xCpuTimer.out
 Example_F2802xCpuTimer.out: $(OBJS) $(CMD_SRCS) $(LIB_SRCS) $(GEN_CMDS)
 	@echo 'Building target: "$@"'
 	@echo 'Invoking: C2000 Linker'
-	"C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/bin/cl2000" -v28 -ml -mt -g --define="_DEBUG" --define="_FLASH" --define="LARGE_MODEL" --quiet --verbose_diagnostics --diag_warning=225 --diag_suppress=10063 -z -m"Example_F2802xCpuTimer.map" --stack_size=0x200 --warn_sections -i"C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/lib" -i"C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include" -i"C:/Users/Alex/Documents/GitHub/BLDC-Motor-Control/TrapezoidalControl" -i"C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/lib" -i"C:/ti/C2000Ware_1_00_04_00_Software/libraries/math/IQmath/c28/lib" --reread_libs --verbose_diagnostics --issue_remarks --xml_link_info="Example_F2802xCpuTimer_linkInfo.xml" --entry_point=code_start --rom_model -o "Example_F2802xCpuTimer.out" $(ORDERED_OBJS)
+	"C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/bin/cl2000" -v28 -ml -mt -O2 --opt_for_speed=0 -g --define="_DEBUG" --define="_FLASH" --define="LARGE_MODEL" --quiet --verbose_diagnostics --diag_warning=225 --diag_suppress=10063 -z -m"Example_F2802xCpuTimer.map" --stack_size=0x200 --warn_sections -i"C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/lib" -i"C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include" -i"C:/Users/Alex/Documents/GitHub/BLDC-Motor-Control/TrapezoidalControl" -i"C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/lib" -i"C:/ti/C2000Ware_1_00_04_00_Software/libraries/math/IQmath/c28/lib" --reread_libs --verbose_diagnostics --issue_remarks --xml_link_info="Example_F2802xCpuTimer_linkInfo.xml" --entry_point=code_start --rom_model -o "Example_F2802xCpuTimer.out" $(ORDERED_OBJS)
 	@echo 'Finished building target: "$@"'
 	@echo ' '
 
@@ -157,8 +158,8 @@ Example_F2802xCpuTimer.hex: $(EXE_OUTPUTS)
 # Other Targets
 clean:
 	-$(RM) $(BIN_OUTPUTS__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "Example_2802xCpuTimer.obj" "user.obj" 
-	-$(RM) "Example_2802xCpuTimer.d" "user.d" 
+	-$(RM) "Example_2802xCpuTimer.obj" "uart.obj" "user.obj" 
+	-$(RM) "Example_2802xCpuTimer.d" "uart.d" "user.d" 
 	-@echo 'Finished clean'
 	-@echo ' '
 
