@@ -16,6 +16,6 @@ extern SCI_Handle mySci;
 void scia_init(void);
 void scia_fifo_init(void);
 void scia_msg(char * msg);
-void scia_xmit(int);
+uint16_t scia_xmit(int a);
 
 #endif /* UART_H_ */

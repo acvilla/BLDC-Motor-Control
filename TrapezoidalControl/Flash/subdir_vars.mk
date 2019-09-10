@@ -12,38 +12,50 @@ LIB_SRCS += \
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/ccs/Debug/driverlib.lib 
 
 C_SRCS += \
-../Example_2802xCpuTimer.c \
+../i2ca.c \
+../main.c \
 ../printf.c \
+../ringBuffer.c \
 ../uart.c \
 ../user.c 
 
 C_DEPS += \
-./Example_2802xCpuTimer.d \
+./i2ca.d \
+./main.d \
 ./printf.d \
+./ringBuffer.d \
 ./uart.d \
 ./user.d 
 
 OBJS += \
-./Example_2802xCpuTimer.obj \
+./i2ca.obj \
+./main.obj \
 ./printf.obj \
+./ringBuffer.obj \
 ./uart.obj \
 ./user.obj 
 
 OBJS__QUOTED += \
-"Example_2802xCpuTimer.obj" \
+"i2ca.obj" \
+"main.obj" \
 "printf.obj" \
+"ringBuffer.obj" \
 "uart.obj" \
 "user.obj" 
 
 C_DEPS__QUOTED += \
-"Example_2802xCpuTimer.d" \
+"i2ca.d" \
+"main.d" \
 "printf.d" \
+"ringBuffer.d" \
 "uart.d" \
 "user.d" 
 
 C_SRCS__QUOTED += \
-"../Example_2802xCpuTimer.c" \
+"../i2ca.c" \
+"../main.c" \
 "../printf.c" \
+"../ringBuffer.c" \
 "../uart.c" \
 "../user.c" 
 

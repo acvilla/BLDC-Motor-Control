@@ -41,7 +41,12 @@ Example_2802xCpuTimer.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2
 Example_2802xCpuTimer.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/pll.h
 Example_2802xCpuTimer.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/timer.h
 Example_2802xCpuTimer.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/wdog.h
+Example_2802xCpuTimer.obj: ../i2ca.h
+Example_2802xCpuTimer.obj: ../i2ca.h
 Example_2802xCpuTimer.obj: ../user.h
+Example_2802xCpuTimer.obj: ../ringBuffer.h
+Example_2802xCpuTimer.obj: C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include/inttypes.h
+Example_2802xCpuTimer.obj: C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include/_fmt_specifier.h
 Example_2802xCpuTimer.obj: ../uart.h
 Example_2802xCpuTimer.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/sci.h
 Example_2802xCpuTimer.obj: ../printf.h
@@ -87,7 +92,12 @@ C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/adc.h:
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/pll.h: 
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/timer.h: 
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/wdog.h: 
+../i2ca.h: 
+../i2ca.h: 
 ../user.h: 
+../ringBuffer.h: 
+C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include/inttypes.h: 
+C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include/_fmt_specifier.h: 
 ../uart.h: 
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/sci.h: 
 ../printf.h: 

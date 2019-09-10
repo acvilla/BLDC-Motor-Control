@@ -38,6 +38,9 @@ uart.obj: ../user.h
 uart.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/gpio.h
 uart.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/clk.h
 uart.obj: C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/pwm.h
+uart.obj: ../ringBuffer.h
+uart.obj: C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include/inttypes.h
+uart.obj: C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include/_fmt_specifier.h
 
 ../uart.c: 
 ../uart.h: 
@@ -77,3 +80,6 @@ C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/cpu.h:
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/gpio.h: 
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/clk.h: 
 C:/ti/C2000Ware_1_00_04_00_Software/device_support/f2802x/common/include/pwm.h: 
+../ringBuffer.h: 
+C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include/inttypes.h: 
+C:/ti/ccsv8/tools/compiler/ti-cgt-c2000_18.1.2.LTS/include/_fmt_specifier.h: 

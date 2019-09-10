@@ -62,9 +62,11 @@
 #include "common/include/pll.h"
 #include "common/include/timer.h"
 #include "common/include/wdog.h"
+#include "i2ca.h"
 #include "user.h"
 #include "uart.h"
 #include "printf.h"
+#include "ringBuffer.h"
 
 
 //
@@ -77,6 +79,7 @@ __interrupt void adc_isr(void);
 __interrupt void hall_a_isr(void);
 __interrupt void hall_b_isr(void);
 __interrupt void hall_c_isr(void);
+__interrupt void sciaTxFifoIsr(void);
 void updatePWMState(volatile struct EPWM_REGS *pwmReg, pwm_state CSFA, pwm_state CSFB);
 void setDutyCycle(uint8_t dutyCycle);
 void initPWM(void);
@@ -135,7 +138,6 @@ void main(void)
      * Initialize the Main Control Object.
      */
     initControl(ControlPtr);
-
 
 
     //
@@ -225,11 +227,14 @@ void main(void)
                                   (intVec_t)&hall_b_isr);
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_12, PIE_SubGroupNumber_1,
                                       (intVec_t)&hall_c_isr);
+    PIE_registerPieIntHandler(myPie, PIE_GroupNumber_9, PIE_SubGroupNumber_2,
+                                  (intVec_t)&sciaTxFifoIsr);
 
     PIE_enableInt(myPie, PIE_GroupNumber_1, PIE_InterruptSource_XINT_1);
     PIE_enableInt(myPie, PIE_GroupNumber_1, PIE_InterruptSource_XINT_2);
     PIE_enableInt(myPie, PIE_GroupNumber_12, PIE_InterruptSource_XINT_3);
-
+    //PIE_enableInt(myPie, PIE_GroupNumber_9, PIE_InterruptSource_SCIARX);
+    PIE_enableInt(myPie, PIE_GroupNumber_9, PIE_InterruptSource_SCIATX);
 
     EDIS;    // This is needed to disable write to EALLOW protected registers
 
@@ -310,7 +315,7 @@ void main(void)
     TIMER_reload(myTimer1);
     TIMER_setEmulationMode(myTimer1, 
                            TIMER_EmulationMode_StopAfterNextDecrement);
-    //TIMER_enableInt(myTimer1);
+    TIMER_enableInt(myTimer1);
     //
     // To ensure precise timing, use write-only instructions to write to the 
     // entire register. Therefore, if any of the configuration bits are changed
@@ -342,13 +347,15 @@ void main(void)
 
     //
     // Enable CPU int1 which is connected to CPU-Timer 0, CPU int13
-    // which is connected to CPU-Timer 1, and CPU int 14, which is connected
+    // which is connected to CPU-Timer 1, CPU int 9 which is connected to SCITX int and CPU int 14, which is connected
     // to CPU-Timer 2
     //
     CPU_enableInt(myCpu, CPU_IntNumber_13);
     CPU_enableInt(myCpu, CPU_IntNumber_10);
     CPU_enableInt(myCpu, CPU_IntNumber_1);
     CPU_enableInt(myCpu, CPU_IntNumber_12);
+    CPU_enableInt(myCpu, CPU_IntNumber_9);
+
 
     //CPU_enableInt(myCpu, CPU_IntNumber_14);
 
@@ -372,87 +379,68 @@ void main(void)
     initPWM();
     CLK_enableTbClockSync(myClk);
     initADC();
+    i2ca_init();
     scia_init();                // Initialize SCI
     scia_fifo_init();           // Initialize the SCI FIFO
-    char *msg = "\r\n\n\nHello World!\0";
-    char buf[50];
-    scia_msg(msg);
+
     initHallStates(myGpio, ControlPtr, GPIO_Number_12, GPIO_Number_6, GPIO_Number_7);
-    for(;;)
-      {
-        if (ControlPtr->speedCalc.speedUpdateReady == TRUE){
-            double periodSecs, freqHz;
-            unsigned long periodCycles;
-            periodCycles = (ControlPtr->speedCalc.timerPeriod - ControlPtr->speedCalc.timerVal); // Electrical rotation period in seconds
-            periodSecs = (double) periodCycles/(ControlPtr->speedCalc.timerPeriod);
-            freqHz = 1/periodSecs;
-            ControlPtr->speedCalc.rpm = freqHz * 60.0/ControlPtr->motor.npp; // Update the speed value
-            ControlPtr->speedCalc.speedUpdateReady = FALSE;
-            if (ControlPtr->speedCalc.rpm > MIN_CLOSED_LOOP_RPM){
-               //dutyCycle = updatePI(ControlPtr);
-               //setDutyCycle(dutyCycle);
+    commutateMotor(ControlPtr);
+    for(;;) {
+
+        if (ring_buffer_is_empty(&(ControlPtr->ringBuf))){
+            char buf[50];
+            snprintf(buf, sizeof(buf), "{\"RPM\": %f, \"Battery\": %f}\n", ControlPtr->speedCalc.rpm, ControlPtr->battery.percBat);
+            ring_buffer_queue_arr(&(ControlPtr->ringBuf), buf, 50);
+            SCI_enableTxInt(mySci);
+        }
+
+        if (ControlPtr->hallErr == TRUE) GPIO_setHigh(myGpio, GPIO_Number_19); // Turn ON error led
+        else GPIO_setLow(myGpio, GPIO_Number_19); // Turn OFF error led
+
+        if (ControlPtr->state == BRAKE){
+            updatePWMState(&EPwm1Regs, LOW, HIGH); // Phase A
+            updatePWMState(&EPwm2Regs, LOW, HIGH); // Phase B
+            updatePWMState(&EPwm3Regs, LOW, HIGH); // Phase C
+        } else if (ControlPtr->state == RUN){
+            if (ControlPtr->speedCalc.speedUpdateReady == TRUE){
+                double periodSecs, freqHz;
+                unsigned long periodCycles;
+                periodCycles = (ControlPtr->speedCalc.timerPeriod - ControlPtr->speedCalc.timerVal); // Electrical rotation period in seconds
+                periodSecs = (double) periodCycles/(ControlPtr->speedCalc.timerPeriod);
+                freqHz = 1/periodSecs;
+                ControlPtr->speedCalc.rpm = freqHz * 60.0/ControlPtr->motor.npp; // Update the speed value
+                ControlPtr->speedCalc.speedUpdateReady = FALSE;
+                if (ControlPtr->speedCalc.rpm > MIN_CLOSED_LOOP_RPM){
+                   // dutyCycle = updatePI(ControlPtr);
+                   // setDutyCycle(dutyCycle);
+                }
             }
-        }
 
-
-        //itoa(buf, (int) ControlPtr->speedCalc.rpm);
-        snprintf(buf, sizeof(buf), "{RPM: %f, Battery: %d}\n\r", ControlPtr->speedCalc.rpm, 100);
-        scia_msg(buf);
-
-
-
-        switch (ControlPtr->currentHallStates){
-        case C:
-            // Phases: Aoff, B+, C-
+        } else if (ControlPtr->state == COAST){
             updatePWMState(&EPwm1Regs, LOW, LOW); // Phase A
-            updatePWMState(&EPwm2Regs, PWM, PWM); // Phase B
-            updatePWMState(&EPwm3Regs, LOW, HIGH); // Phase C
-            break;
-        case AC:
-            // Phases: A-, B+, Coff
-            updatePWMState(&EPwm1Regs, LOW, HIGH); // Phase A
-            updatePWMState(&EPwm2Regs, PWM, PWM); // Phase B
-            updatePWMState(&EPwm3Regs, LOW, LOW); // Phase C
-            break;
-        case A:
-            // Phases: A-, Boff, C+
-            updatePWMState(&EPwm1Regs, LOW, HIGH); // Phase A
             updatePWMState(&EPwm2Regs, LOW, LOW); // Phase B
-            updatePWMState(&EPwm3Regs, PWM, PWM); // Phase C
-            break;
-        case AB:
-            // Phases: Aoff, B-, C+
-            updatePWMState(&EPwm1Regs, LOW, LOW); // Phase A
-            updatePWMState(&EPwm2Regs, LOW, HIGH); // Phase B
-            updatePWMState(&EPwm3Regs, PWM, PWM); // Phase C
-            break;
-        case B:
-            // Phases: A+, B-, Coff
-            updatePWMState(&EPwm1Regs, PWM, PWM); // Phase A
-            updatePWMState(&EPwm2Regs, LOW, HIGH); // Phase B
             updatePWMState(&EPwm3Regs, LOW, LOW); // Phase C
-            break;
-        case BC:
-            // Phases: A+, Boff, C-
-            updatePWMState(&EPwm1Regs, PWM, PWM); // Phase A
-            updatePWMState(&EPwm2Regs, LOW, LOW); // Phase B
-            updatePWMState(&EPwm3Regs, LOW, HIGH); // Phase C
-            break;
-        default:
-            break;
         }
-
-      }
-
+    }
 }
 
 void initGPIO(void){
-        // Set GPIO28 at RX and GPIO29 as TX for SCIA
+        // Set GPIO28 as RX and GPIO29 as TX for SCIA
         GPIO_setPullUp(myGpio, GPIO_Number_28, GPIO_PullUp_Enable);
         GPIO_setPullUp(myGpio, GPIO_Number_29, GPIO_PullUp_Disable);
-        GPIO_setQualification(myGpio, GPIO_Number_28, GPIO_Qual_ASync);
         GPIO_setMode(myGpio, GPIO_Number_28, GPIO_28_Mode_SCIRXDA);
         GPIO_setMode(myGpio, GPIO_Number_29, GPIO_29_Mode_SCITXDA);
+
+        // Set GPIO32 as SDA and GPIO33 as SCL for I2C communication with fuel gauge
+        GPIO_setMode(myGpio, GPIO_Number_32, GPIO_32_Mode_SDAA);
+        GPIO_setMode(myGpio, GPIO_Number_33, GPIO_33_Mode_SCLA);
+
+        GPIO_setMode(myGpio, GPIO_Number_19, GPIO_19_Mode_GeneralPurpose);
+        GPIO_setDirection(myGpio, GPIO_Number_19, GPIO_Direction_Output);
+
+        GPIO_setMode(myGpio, GPIO_Number_16, GPIO_16_Mode_GeneralPurpose);
+        GPIO_setDirection(myGpio, GPIO_Number_16, GPIO_Direction_Output);
+        GPIO_setHigh(myGpio, GPIO_Number_16); // Enable linear regulator for gate drivers
 
          // Set Up GPIO12 (Hall Sensor A) as input.
         GPIO_setMode(myGpio, GPIO_Number_12, GPIO_12_Mode_GeneralPurpose);
@@ -515,7 +503,7 @@ void initADC(void){
        ADC_enableInt(myAdc, ADC_IntNumber_1);
        ADC_setIntMode(myAdc, ADC_IntNumber_1, ADC_IntMode_EOC);
        ADC_setIntSrc(myAdc, ADC_IntNumber_1, ADC_IntSrc_EOC0);
-       ADC_setSocChanNumber (myAdc, ADC_SocNumber_0, ADC_SocChanNumber_A6);
+       ADC_setSocChanNumber (myAdc, ADC_SocNumber_0, ADC_SocChanNumber_B1);
        ADC_setSocTrigSrc(myAdc, ADC_SocNumber_0, ADC_SocTrigSrc_CpuTimer_1);
        ADC_setSocSampleWindow(myAdc, ADC_SocNumber_0,
                                  ADC_SocSampleWindow_37_cycles);
@@ -582,18 +570,67 @@ void initPWM(void)
     EPwm3Regs.AQCTLB.bit.CBD = AQ_CLEAR;
 
 
-    EPwm1Regs.CMPA.half.CMPA = 750; // adjust duty for output EPWM1A
-    EPwm1Regs.CMPB = 750; // adjust duty for output EPWM3B
+    EPwm1Regs.CMPA.half.CMPA = 300; // adjust duty for output EPWM1A
+    EPwm1Regs.CMPB = 310; // adjust duty for output EPWM3B
 
-    EPwm2Regs.CMPA.half.CMPA = 750; // adjust duty for output EPWM2A
-    EPwm2Regs.CMPB = 750; // adjust duty for output EPWM3B
+    EPwm2Regs.CMPA.half.CMPA = 300; // adjust duty for output EPWM2A
+    EPwm2Regs.CMPB = 310; // adjust duty for output EPWM3B
 
-    EPwm3Regs.CMPA.half.CMPA = 750; // adjust duty for output EPWM3A
-    EPwm3Regs.CMPB = 750; // adjust duty for output EPWM3B
+    EPwm3Regs.CMPA.half.CMPA = 300; // adjust duty for output EPWM3A
+    EPwm3Regs.CMPB = 310; // adjust duty for output EPWM3B
 
+    // Brake the motor to start off
+    updatePWMState(&EPwm1Regs, LOW, HIGH); // Phase A
+    updatePWMState(&EPwm2Regs, LOW, HIGH); // Phase B
+    updatePWMState(&EPwm3Regs, LOW, HIGH); // Phase C
 
 }
 
+__interrupt void
+sciaTxFifoIsr(void)
+{
+    char buf, ch;
+    static parse_state parseState = BUFFER_EMPTY;
+    switch (parseState){
+        case BUFFER_EMPTY:
+            if (ring_buffer_is_empty(&(ControlPtr->ringBuf)) == FALSE){
+                parseState = WAITING_FOR_SOF; // buffer no longer empty
+            }
+            break;
+        case WAITING_FOR_SOF:
+            if (ring_buffer_peek(&(ControlPtr->ringBuf), &ch, 0) == FALSE){
+                parseState = BUFFER_EMPTY;
+                break;
+            }; // Look at oldest data byte in buffer, also check if empty
+            if (ch != '{') ring_buffer_dequeue(&(ControlPtr->ringBuf), &ch); // Throw away data that isn't part of a message
+            else parseState = SENDING_FRAME;
+            break;
+        case SENDING_FRAME:
+            if (ring_buffer_dequeue(&(ControlPtr->ringBuf), &buf) == TRUE){
+                scia_xmit(buf); // Transmit just one byte if there is data in the ring buffer
+                if (buf == '}'){
+                    parseState = WAITING_FOR_SOF; // Wait for new SOF since EOF has been reached
+                }
+            } else {
+                parseState = BUFFER_EMPTY;
+            }
+            break;
+        default:
+            break;
+    }
+
+    //
+    // Clear SCI Interrupt flag
+    //
+    SCI_clearTxFifoInt(mySci);
+
+    //
+    // Issue PIE ACK
+    //
+    PIE_clearInt(myPie, PIE_GroupNumber_9);
+
+    return;
+}
 
 //
 // cpu_timer1_isr - 
@@ -602,8 +639,9 @@ __interrupt void
 cpu_timer1_isr(void)
 {
     /*
-     * Main ISR: Sample Throttle to calculate speed ref.
+     * Use this ISR to send out one byte over UART from ring buffer, which is filled in main loop
      */
+
 
     // ADC SOC should occur when this interrupt fires
 
@@ -616,11 +654,29 @@ cpu_timer1_isr(void)
 __interrupt void
 adc_isr(void)
 {
-    unsigned int adc_counts = ADC_readResult(myAdc, ADC_ResultNumber_0);
-    double result = (double)(adc_counts*ControlPtr->speedCalc.rpmMax)/((1 << NUM_ADC_BITS) - 1);
-    ControlPtr->speedCalc.rpmRef = result; // Update the command value used by the PI controller
-    ADC_clearIntFlag(myAdc, ADC_IntNumber_1);
-    PIE_clearInt(myPie, PIE_GroupNumber_10);
+
+    // Nest Interrupts for Hall sensors, so they can occur during this interrupt
+        uint16_t TempPIEIER1, TempPIEIER12;
+        TempPIEIER1 = PieCtrlRegs.PIEIER1.all; // Save PIEIER register for later
+        TempPIEIER12 = PieCtrlRegs.PIEIER12.all; // Save PIEIER register for later
+        IER |= 0x801;                         // Set global priority by adjusting IER
+        IER &= 0x801;
+        PieCtrlRegs.PIEIER1.all &= 0x0018;    // Set group priority by adjusting PIEIER2 to allow INT2.2 to interrupt current ISR
+        PieCtrlRegs.PIEIER12.all &= 0x0001;    // Set group priority by adjusting PIEIER2 to allow INT2.2 to interrupt current ISR
+        PieCtrlRegs.PIEACK.all = 0xFFFF;      // Enable PIE interrupts
+        asm("       NOP");                    // Wait one cycle
+        EINT;                                 // Clear INTM to enable interrupts
+
+        unsigned int adc_counts = ADC_readResult(myAdc, ADC_ResultNumber_0);
+        double result = (double)(adc_counts*ControlPtr->speedCalc.rpmMax)/((1 << NUM_ADC_BITS) - 1);
+        ControlPtr->speedCalc.rpmRef = result; // Update the command value used by the PI controller
+        ADC_clearIntFlag(myAdc, ADC_IntNumber_1);
+        PIE_clearInt(myPie, PIE_GroupNumber_10);
+
+        DINT;
+        PieCtrlRegs.PIEIER1.all = TempPIEIER1;
+        PieCtrlRegs.PIEIER12.all = TempPIEIER12;
+
     return;
 }
 //
@@ -632,6 +688,25 @@ hall_a_isr(void)
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_12);
     updateHall_A(gpioVal, ControlPtr);
     checkHallErr(ControlPtr);
+    commutateMotor(ControlPtr);
+
+    //GPIO_toggle(myGpio, GPIO_Number_29);
+                if (gpioVal == 1){      // Used to get time between rising edge to calculate speed.
+                    //GPIO_setHigh(myGpio, GPIO_Number_29);
+                } else {
+                    if (myTimer0->TCR & TIMER_TCR_TSS_BITS){ // If timer is stopped, start timer and begin count
+                               //GPIO_setLow(myGpio, GPIO_Number_28);
+                               TIMER_reload(myTimer0);
+                               TIMER_start(myTimer0);
+                    }else {
+                        // GPIO_setHigh(myGpio, GPIO_Number_28);
+                        TIMER_stop(myTimer0);
+
+                        ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
+                        ControlPtr->speedCalc.speedUpdateReady = TRUE;
+                     }
+                     //GPIO_setLow(myGpio, GPIO_Number_29);
+                }
     //
     // Acknowledge this interrupt to get more from group 1
     //
@@ -646,23 +721,8 @@ hall_b_isr(void)
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_6);
     updateHall_B(gpioVal, ControlPtr);
     checkHallErr(ControlPtr);
-    GPIO_toggle(myGpio, GPIO_Number_29);
-      if (gpioVal == 1){      // Used to get time between rising edge to calculate speed.
-          //GPIO_setHigh(myGpio, GPIO_Number_29);
-      } else {
-          if (myTimer0->TCR & TIMER_TCR_TSS_BITS){ // If timer is stopped, start timer and begin count
-                     //GPIO_setLow(myGpio, GPIO_Number_28);
-                     TIMER_reload(myTimer0);
-                     TIMER_start(myTimer0);
-          }else {
-              // GPIO_setHigh(myGpio, GPIO_Number_28);
-              TIMER_stop(myTimer0);
+    commutateMotor(ControlPtr);
 
-              ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
-              ControlPtr->speedCalc.speedUpdateReady = TRUE;
-           }
-           //GPIO_setLow(myGpio, GPIO_Number_29);
-      }
 
 
     //
@@ -679,47 +739,14 @@ hall_c_isr(void)
     uint32_t gpioVal = GPIO_getData(myGpio, GPIO_Number_7);
     updateHall_C(gpioVal, ControlPtr);
     checkHallErr(ControlPtr);
+    commutateMotor(ControlPtr);
+
     //
     // Acknowledge this interrupt to get more from group 12
     //
     PIE_clearInt(myPie, PIE_GroupNumber_12);
 }
 
-void itoa(char *buf, int data)
-{
-    int n = data;
-    int i = 0;
-
-    bool isNeg = n<0;
-
-            unsigned int n1 = isNeg ? -n : n;
-
-            while(n1!=0)
-            {
-                buf[i++] = n1%10+'0';
-                n1=n1/10;
-            }
-
-            if(isNeg)
-                buf[i++] = '-';
-
-            buf[i] = '\n'; // insert newline
-            buf[i+1] = '\0';
-            int t;
-            for(t = 0; t < i/2; t++)
-            {
-                buf[t] ^= buf[i-t-1];
-                buf[i-t-1] ^= buf[t];
-                buf[t] ^= buf[i-t-1];
-            }
-
-            if(n == 0)
-            {
-                buf[0] = '0';
-                buf[1] = '\n';
-                buf[2] = '\0';
-            }
-}
 //
 // End of File
 //

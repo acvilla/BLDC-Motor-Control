@@ -27,8 +27,8 @@ void scia_init()
 
     SCI_enableTx(mySci);
     SCI_enableRx(mySci);
-    SCI_enableTxInt(mySci);
-    SCI_enableRxInt(mySci);
+    SCI_disableTxFifoInt(mySci);
+    SCI_disableRxFifoInt(mySci);
 
     //SCI BRR = LSPCLK/(SCI BAUDx8) - 1
 #if (CPU_FRQ_60MHZ)
@@ -46,16 +46,17 @@ void scia_init()
 
 
 //
-// scia_xmit - Transmit a character from the SCI
+// scia_xmit - Attempt to transmit a character from the SCI, return 1 if successful, 0 if failed
 //
-void scia_xmit(int a)
+uint16_t scia_xmit(int a)
 {
-    while(SCI_getTxFifoStatus(mySci) != SCI_FifoStatus_Empty)
+    if(SCI_getTxFifoStatus(mySci) != SCI_FifoStatus_Empty)
     {
-
+        return 0; // Failed to transmit
     }
 
-    SCI_putDataBlocking(mySci, a);
+    uint16_t xmitSuccess = SCI_putDataNonBlocking(mySci, a);
+    return xmitSuccess;
 }
 
 //
@@ -88,5 +89,8 @@ scia_fifo_init()
     SCI_clearRxFifoInt(mySci);
     SCI_setRxFifoIntLevel(mySci, SCI_FifoLevel_4_Words);
 
+
     return;
 }
+
+
