@@ -27,8 +27,8 @@ void scia_init()
 
     SCI_enableTx(mySci);
     SCI_enableRx(mySci);
-    SCI_disableTxFifoInt(mySci);
-    SCI_disableRxFifoInt(mySci);
+    SCI_enableTxInt(mySci);
+    SCI_disableRxInt(mySci);
 
     //SCI BRR = LSPCLK/(SCI BAUDx8) - 1
 #if (CPU_FRQ_60MHZ)
@@ -50,13 +50,9 @@ void scia_init()
 //
 uint16_t scia_xmit(int a)
 {
-    if(SCI_getTxFifoStatus(mySci) != SCI_FifoStatus_Empty)
-    {
-        return 0; // Failed to transmit
-    }
 
-    uint16_t xmitSuccess = SCI_putDataNonBlocking(mySci, a);
-    return xmitSuccess;
+    SCI_putDataNonBlocking(mySci, a);
+    return 16;
 }
 
 //

@@ -75,11 +75,12 @@
 //__interrupt void cpu_timer0_isr(void);
 __interrupt void cpu_timer1_isr(void);
 __interrupt void cpu_timer2_isr(void);
+__interrupt void cpu_timer0_isr(void);
 __interrupt void adc_isr(void);
 __interrupt void hall_a_isr(void);
 __interrupt void hall_b_isr(void);
 __interrupt void hall_c_isr(void);
-__interrupt void sciaTxFifoIsr(void);
+__interrupt void sciaTxIsr(void);
 void updatePWMState(volatile struct EPWM_REGS *pwmReg, pwm_state CSFA, pwm_state CSFB);
 void setDutyCycle(uint8_t dutyCycle);
 void initPWM(void);
@@ -94,6 +95,8 @@ void itoa(char *buf, int data);
 //unsigned long Xint2Count;
 //unsigned long Xint3Count;
 //unsigned long adcIntCount = 0;
+int length = 0;
+char buf[45];
 
 CLK_Handle myClk;
 ADC_Handle myAdc;
@@ -216,7 +219,8 @@ void main(void)
     // ISR functions found within this file.
     //
     EALLOW;            // This is needed to write to EALLOW protected registers
-
+    PIE_registerPieIntHandler(myPie, PIE_GroupNumber_1, PIE_SubGroupNumber_7,
+                                  (intVec_t)&cpu_timer0_isr);
     PIE_registerSystemIntHandler(myPie, PIE_SystemInterrupts_TINT1, 
                                  (intVec_t)&cpu_timer1_isr);
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_10, PIE_SubGroupNumber_1,
@@ -228,13 +232,15 @@ void main(void)
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_12, PIE_SubGroupNumber_1,
                                       (intVec_t)&hall_c_isr);
     PIE_registerPieIntHandler(myPie, PIE_GroupNumber_9, PIE_SubGroupNumber_2,
-                                  (intVec_t)&sciaTxFifoIsr);
+                                  (intVec_t)&sciaTxIsr);
 
     PIE_enableInt(myPie, PIE_GroupNumber_1, PIE_InterruptSource_XINT_1);
     PIE_enableInt(myPie, PIE_GroupNumber_1, PIE_InterruptSource_XINT_2);
     PIE_enableInt(myPie, PIE_GroupNumber_12, PIE_InterruptSource_XINT_3);
     //PIE_enableInt(myPie, PIE_GroupNumber_9, PIE_InterruptSource_SCIARX);
     PIE_enableInt(myPie, PIE_GroupNumber_9, PIE_InterruptSource_SCIATX);
+    PIE_enableInt(myPie, PIE_GroupNumber_1, PIE_InterruptSource_TIMER_0);
+
 
     EDIS;    // This is needed to disable write to EALLOW protected registers
 
@@ -308,13 +314,14 @@ void main(void)
     TIMER_setPreScaler(myTimer0, 0); // No prescaler
     TIMER_reload(myTimer0);
     TIMER_setEmulationMode(myTimer0, 
-                           TIMER_EmulationMode_StopAfterNextDecrement);
+                           TIMER_EmulationMode_StopAtZero);
+    TIMER_enableInt(myTimer0);
 
 
     TIMER_setPreScaler(myTimer1, 0);
     TIMER_reload(myTimer1);
     TIMER_setEmulationMode(myTimer1, 
-                           TIMER_EmulationMode_StopAfterNextDecrement);
+                           TIMER_EmulationMode_StopAtZero);
     TIMER_enableInt(myTimer1);
     //
     // To ensure precise timing, use write-only instructions to write to the 
@@ -334,6 +341,8 @@ void main(void)
     //
     //CpuTimer1Regs.TCR.all = 0x4001;
     TIMER_start(myTimer1);
+    TIMER_start(myTimer0);
+
     
     //
     // Use write-only instruction to set TSS bit = 0
@@ -355,6 +364,8 @@ void main(void)
     CPU_enableInt(myCpu, CPU_IntNumber_1);
     CPU_enableInt(myCpu, CPU_IntNumber_12);
     CPU_enableInt(myCpu, CPU_IntNumber_9);
+    int tempIER = CPU_IntNumber_1 | CPU_IntNumber_9 | CPU_IntNumber_10 | CPU_IntNumber_12;
+    IER &= tempIER;
 
 
     //CPU_enableInt(myCpu, CPU_IntNumber_14);
@@ -381,17 +392,13 @@ void main(void)
     initADC();
     i2ca_init();
     scia_init();                // Initialize SCI
-    scia_fifo_init();           // Initialize the SCI FIFO
-
+    scia_msg("Hello World!\n\0");
     initHallStates(myGpio, ControlPtr, GPIO_Number_12, GPIO_Number_6, GPIO_Number_7);
     commutateMotor(ControlPtr);
     for(;;) {
-
-        if (ring_buffer_is_empty(&(ControlPtr->ringBuf))){
-            char buf[50];
-            snprintf(buf, sizeof(buf), "{\"RPM\": %f, \"Battery\": %f}\n", ControlPtr->speedCalc.rpm, ControlPtr->battery.percBat);
-            ring_buffer_queue_arr(&(ControlPtr->ringBuf), buf, 50);
-            SCI_enableTxInt(mySci);
+        length = snprintf(buf, sizeof(buf), "{\"RPM\": %f, \"Battery\": %f}\n\r", 25.2, ControlPtr->battery.percBat);
+        if (RING_BUFFER_SIZE - ring_buffer_num_items(&ControlPtr->ringBuf) > length){ // Check if there's enough room in buffer for new string
+            ring_buffer_queue_arr(&(ControlPtr->ringBuf), buf, length);
         }
 
         if (ControlPtr->hallErr == TRUE) GPIO_setHigh(myGpio, GPIO_Number_19); // Turn ON error led
@@ -587,37 +594,15 @@ void initPWM(void)
 }
 
 __interrupt void
-sciaTxFifoIsr(void)
+sciaTxIsr(void)
 {
     char buf, ch;
     static parse_state parseState = BUFFER_EMPTY;
-    switch (parseState){
-        case BUFFER_EMPTY:
-            if (ring_buffer_is_empty(&(ControlPtr->ringBuf)) == FALSE){
-                parseState = WAITING_FOR_SOF; // buffer no longer empty
-            }
-            break;
-        case WAITING_FOR_SOF:
-            if (ring_buffer_peek(&(ControlPtr->ringBuf), &ch, 0) == FALSE){
-                parseState = BUFFER_EMPTY;
-                break;
-            }; // Look at oldest data byte in buffer, also check if empty
-            if (ch != '{') ring_buffer_dequeue(&(ControlPtr->ringBuf), &ch); // Throw away data that isn't part of a message
-            else parseState = SENDING_FRAME;
-            break;
-        case SENDING_FRAME:
+
             if (ring_buffer_dequeue(&(ControlPtr->ringBuf), &buf) == TRUE){
                 scia_xmit(buf); // Transmit just one byte if there is data in the ring buffer
-                if (buf == '}'){
-                    parseState = WAITING_FOR_SOF; // Wait for new SOF since EOF has been reached
-                }
-            } else {
-                parseState = BUFFER_EMPTY;
             }
-            break;
-        default:
-            break;
-    }
+
 
     //
     // Clear SCI Interrupt flag
@@ -648,6 +633,21 @@ cpu_timer1_isr(void)
 
 }
 
+__interrupt void
+cpu_timer0_isr(void)
+{
+        if (TIMER_getStatus(myTimer0) == TIMER_Status_CntIsZero){
+            ControlPtr->speedCalc.rpm = 0; // Set RPM to 0 and skip RPM calculation
+            ControlPtr->speedCalc.speedUpdateReady = FALSE;
+        }
+
+        PIE_clearInt(myPie, PIE_GroupNumber_1);
+        TIMER_clearFlag(myTimer0);
+        TIMER_stop(myTimer0);
+
+}
+
+
 //
 // adc_isr -
 //
@@ -655,27 +655,12 @@ __interrupt void
 adc_isr(void)
 {
 
-    // Nest Interrupts for Hall sensors, so they can occur during this interrupt
-        uint16_t TempPIEIER1, TempPIEIER12;
-        TempPIEIER1 = PieCtrlRegs.PIEIER1.all; // Save PIEIER register for later
-        TempPIEIER12 = PieCtrlRegs.PIEIER12.all; // Save PIEIER register for later
-        IER |= 0x801;                         // Set global priority by adjusting IER
-        IER &= 0x801;
-        PieCtrlRegs.PIEIER1.all &= 0x0018;    // Set group priority by adjusting PIEIER2 to allow INT2.2 to interrupt current ISR
-        PieCtrlRegs.PIEIER12.all &= 0x0001;    // Set group priority by adjusting PIEIER2 to allow INT2.2 to interrupt current ISR
-        PieCtrlRegs.PIEACK.all = 0xFFFF;      // Enable PIE interrupts
-        asm("       NOP");                    // Wait one cycle
-        EINT;                                 // Clear INTM to enable interrupts
-
         unsigned int adc_counts = ADC_readResult(myAdc, ADC_ResultNumber_0);
         double result = (double)(adc_counts*ControlPtr->speedCalc.rpmMax)/((1 << NUM_ADC_BITS) - 1);
         ControlPtr->speedCalc.rpmRef = result; // Update the command value used by the PI controller
         ADC_clearIntFlag(myAdc, ADC_IntNumber_1);
         PIE_clearInt(myPie, PIE_GroupNumber_10);
 
-        DINT;
-        PieCtrlRegs.PIEIER1.all = TempPIEIER1;
-        PieCtrlRegs.PIEIER12.all = TempPIEIER12;
 
     return;
 }
@@ -702,8 +687,11 @@ hall_a_isr(void)
                         // GPIO_setHigh(myGpio, GPIO_Number_28);
                         TIMER_stop(myTimer0);
 
-                        ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
-                        ControlPtr->speedCalc.speedUpdateReady = TRUE;
+                            ControlPtr->speedCalc.timerVal = TIMER_getCount(myTimer0);
+                            ControlPtr->speedCalc.speedUpdateReady = TRUE;
+
+
+
                      }
                      //GPIO_setLow(myGpio, GPIO_Number_29);
                 }
